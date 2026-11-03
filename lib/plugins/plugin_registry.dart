@@ -1,12 +1,12 @@
 import 'package:flutter/widgets.dart';
 
-import '../config/sites/linuxdo.dart';
+import '../config/sites/nodeloc.dart';
 import 'plugin_context.dart';
 import 'site_plugin.dart';
 
 /// 站点插件注册中心
 ///
-/// 默认取当前站点（[linuxdoCustomization]）声明的插件列表。
+/// 默认取当前站点（[nodelocCustomization]）声明的插件列表。
 /// 测试可通过 [overridePlugins] 注入，并用 [resetOverride] 还原。
 ///
 /// 这里直接引用站点配置而不是 `AppConstants`，是为了避开 `constants.dart`
@@ -17,8 +17,11 @@ class PluginRegistry {
   static List<SitePlugin>? _override;
 
   /// 当前生效的插件列表
+  ///
+  /// NodeLoc 未启用站点专属插件，[nodelocCustomization.plugins] 为空，
+  /// 因此默认不执行任何回复前校验。
   static List<SitePlugin> get plugins =>
-      _override ?? linuxdoCustomization.plugins;
+      _override ?? nodelocCustomization.plugins;
 
   /// 测试注入
   @visibleForTesting

@@ -22,13 +22,13 @@ void main() {
   test('canHandleUri 只接受受支持的 scheme 和 host', () {
     final service = DeepLinkService.instance;
 
-    expect(service.canHandleUri(Uri.parse('https://linux.do/t/123')), isTrue);
+    expect(service.canHandleUri(Uri.parse('https://www.nodeloc.com/t/123')), isTrue);
     expect(
-      service.canHandleUri(Uri.parse('https://www.linux.do/t/123')),
+      service.canHandleUri(Uri.parse('https://www.nodeloc.com/t/123')),
       isTrue,
     );
     expect(
-      service.canHandleUri(Uri.parse('https://meta.linux.do/latest')),
+      service.canHandleUri(Uri.parse('https://meta.nodeloc.com/latest')),
       isTrue,
     );
     expect(service.canHandleUri(Uri.parse('fluxdo://topic/123')), isTrue);
@@ -40,10 +40,10 @@ void main() {
       service.canHandleUri(Uri.parse('https://example.com/t/123')),
       isFalse,
     );
-    expect(service.canHandleUri(Uri.parse('ftp://linux.do/t/123')), isFalse);
+    expect(service.canHandleUri(Uri.parse('ftp://www.nodeloc.com/t/123')), isFalse);
   });
 
-  testWidgets('handleUri 不接管非 linux.do 的话题路径', (tester) async {
+  testWidgets('handleUri 不接管非 www.nodeloc.com 的话题路径', (tester) async {
     BuildContext? capturedContext;
 
     await tester.pumpWidget(

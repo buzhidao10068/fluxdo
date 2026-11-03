@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants.dart';
 import '../utils/discourse_url_parser.dart';
 
 class ClipboardTopicLinkCandidate {
@@ -23,10 +24,16 @@ class ClipboardTopicLinkService {
   static const String lastPromptedHashPrefsKey =
       'pref_clipboard_topic_link_last_prompted_hash';
 
-  static final RegExp _linuxDoUrlRegex = RegExp(
-    r'(?:(?:https?:)?//)?(?:www\.)?linux\.do(?::\d+)?/[^\s<>"\]\)）}】》]+',
-    caseSensitive: false,
-  );
+  /// 站点话题链接正则：由当前站点根域（如 nodeloc.com）派生，换站自动生效
+  static final RegExp _siteUrlRegex = _buildSiteUrlRegex();
+
+  static RegExp _buildSiteUrlRegex() {
+    final root = RegExp.escape(AppConstants.siteRootDomain.toLowerCase());
+    return RegExp(
+      '(?:(?:https?:)?//)?(?:www\.)?' + root + '(?::\d+)?/[^\s<>"\]\)）}】》]+',
+      caseSensitive: false,
+    );
+  }
 
   /// 进程内已提示过的链接 hash。
   /// 与持久化的 [lastPromptedHashPrefsKey] 配合使用：持久化只记最近一次，
@@ -75,7 +82,7 @@ class ClipboardTopicLinkService {
   }
 
   ClipboardTopicLinkCandidate? findFirstTopicLink(String text) {
-    for (final match in _linuxDoUrlRegex.allMatches(text)) {
+    for (final match in _siteUrlRegex.allMatches(text)) {
       final rawUrl = _trimTrailingPunctuation(match.group(0)!);
       if (!_hasValidLeadingBoundary(text, match.start)) continue;
 
@@ -101,7 +108,7 @@ class ClipboardTopicLinkService {
     if (_looksEmbeddedInAnotherUrl(text, start)) return false;
 
     final previous = text.codeUnitAt(start - 1);
-    // 前一个字符是冒号一律拒绝，覆盖 ://linux.do 与 mailto:linux.do 等情况
+    // 前一个字符是冒号一律拒绝，覆盖 ://站点域 与 mailto:站点域 等情况
     if (previous == 0x3a) return false;
     if (previous == 0x3d || previous == 0x26) return false;
 
@@ -165,9 +172,12 @@ class ClipboardTopicLinkService {
     return Uri.tryParse(rawUrl);
   }
 
+  /// 仅接受站点主域与裸域（如 www.nodeloc.com / nodeloc.com），
+  /// 子域（如 meta.nodeloc.com）不触发剪贴板提示。
   static bool _isAllowedHost(String host) {
     final normalizedHost = host.toLowerCase();
-    return normalizedHost == 'linux.do' || normalizedHost == 'www.linux.do';
+    return normalizedHost == AppConstants.siteHost.toLowerCase() ||
+        normalizedHost == AppConstants.siteRootDomain.toLowerCase();
   }
 
   static bool _isSupportedTopicPath(String path) {

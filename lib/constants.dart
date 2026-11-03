@@ -5,13 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:ua_client_hints/ua_client_hints.dart';
 import 'config/site_customization.dart';
-import 'config/sites/linuxdo.dart';
+import 'config/sites/nodeloc.dart';
 import 'services/windows_webview_environment_service.dart';
 
 /// 应用常量
 class AppConstants {
   /// 当前站点自定义配置
-  static final SiteCustomization siteCustomization = linuxdoCustomization;
+  static final SiteCustomization siteCustomization = nodelocCustomization;
 
   /// 是否启用 WebView Cookie 同步（启动时预热 WebView）
   /// 设为 false 时，不使用 WebView 同步，Cookie 由 Dio Set-Cookie 与本地存储维护
@@ -297,8 +297,25 @@ class AppConstants {
         '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
   }
 
-  /// linux.do 域名
-  static const String baseUrl = 'https://linux.do';
+  /// nodeloc.com 站点域名（必须带 www，NodeLoc 对裸域做 301 跳转）
+  static const String baseUrl = 'https://www.nodeloc.com';
+
+  /// 站点主域（含 www，由 [baseUrl] 派生，换站自动生效）
+  static String get siteHost => Uri.parse(baseUrl).host;
+
+  /// 站点根域（不含 www 前缀，如 nodeloc.com），用于匹配裸域与子域
+  static String get siteRootDomain {
+    final host = siteHost;
+    return host.startsWith('www.') ? host.substring(4) : host;
+  }
+
+  /// 判断给定 host 是否属于当前站点（主域、裸域或任意子域）
+  static bool isSiteHost(String host) {
+    final normalized = host.toLowerCase();
+    if (normalized == siteHost.toLowerCase()) return true;
+    final root = siteRootDomain.toLowerCase();
+    return normalized == root || normalized.endsWith('.$root');
+  }
 
   /// 请求首页时是否跳过 X-CSRF-Token（用于预热）
   static const bool skipCsrfForHomeRequest = true;

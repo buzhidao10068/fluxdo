@@ -53,44 +53,44 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <data android:scheme="fluxdo-launch" />
             </intent-filter>
-            <!-- Deep Links for linux.do - 话题链接 -->
+            <!-- Deep Links for www.nodeloc.com - 话题链接 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="linux.do" android:pathPrefix="/t/" />
+                <data android:scheme="https" android:host="www.nodeloc.com" android:pathPrefix="/t/" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" android:host="linux.do" android:pathPrefix="/t/" />
+                <data android:scheme="http" android:host="www.nodeloc.com" android:pathPrefix="/t/" />
             </intent-filter>
-            <!-- Deep Links for linux.do - 用户链接 -->
+            <!-- Deep Links for www.nodeloc.com - 用户链接 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="linux.do" android:pathPrefix="/u/" />
+                <data android:scheme="https" android:host="www.nodeloc.com" android:pathPrefix="/u/" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" android:host="linux.do" android:pathPrefix="/u/" />
+                <data android:scheme="http" android:host="www.nodeloc.com" android:pathPrefix="/u/" />
             </intent-filter>
-            <!-- Deep Links for linux.do - 邮箱链接登录 -->
+            <!-- Deep Links for www.nodeloc.com - 邮箱链接登录 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="linux.do" android:pathPrefix="/session/email-login/" />
+                <data android:scheme="https" android:host="www.nodeloc.com" android:pathPrefix="/session/email-login/" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" android:host="linux.do" android:pathPrefix="/session/email-login/" />
+                <data android:scheme="http" android:host="www.nodeloc.com" android:pathPrefix="/session/email-login/" />
             </intent-filter>
             <!-- Custom URL Scheme -->
             <intent-filter>
