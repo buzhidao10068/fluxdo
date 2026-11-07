@@ -18,7 +18,7 @@ import '../common/error_view.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import 'sticker_market_sheet.dart';
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 表情包选择器
 ///

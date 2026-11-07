@@ -29,7 +29,7 @@ void main() {
       );
       final outcome = _failure(
         401,
-        url: 'https://cdk.linux.do/api/v1/oauth/user-info',
+        url: 'https://cdk.nodeloc.com/api/v1/oauth/user-info',
       );
 
       expect(policy.canHandle(outcome), isFalse);
@@ -41,7 +41,9 @@ void main() {
             CanonicalCookie(name: '_t', value: 'valid'),
       );
       expect(
-        policy.canHandle(_failure(401, url: 'https://linux.do/latest.json')),
+        policy.canHandle(
+          _failure(401, url: 'https://www.nodeloc.com/latest.json'),
+        ),
         isTrue,
       );
     });
@@ -53,10 +55,7 @@ void main() {
         readSessionToken: () async =>
             CanonicalCookie(name: '_t', value: 'valid'),
       );
-      final outcome = _failure(
-        401,
-        body: {'error_type': 'not_logged_in'},
-      );
+      final outcome = _failure(401, body: {'error_type': 'not_logged_in'});
       expect(policy.canHandle(outcome), isFalse);
     });
 
@@ -116,13 +115,15 @@ void main() {
       );
       final options = RequestOptions(
         path: '/latest.json',
-        baseUrl: 'https://linux.do',
+        baseUrl: 'https://www.nodeloc.com',
       );
       final outcome = AttemptOutcome.success(
         response: Response<dynamic>(
           requestOptions: options,
           statusCode: 200,
-          headers: Headers.fromMap({'discourse-logged-out': ['1']}),
+          headers: Headers.fromMap({
+            'discourse-logged-out': ['1'],
+          }),
           data: const {},
         ),
         attemptIndex: 0,
@@ -135,7 +136,7 @@ void main() {
   group('jar 快照时序(M0 回归护栏)', () {
     test('401 携带清除 _t 的 Set-Cookie 时,自愈仍读到有效快照并重放', () async {
       final jar = CookieJar();
-      final uri = Uri.parse('https://linux.do/latest.json');
+      final uri = Uri.parse('https://www.nodeloc.com/latest.json');
       await jar.saveFromResponse(uri, [Cookie('_t', 'valid')..path = '/']);
 
       var tokenReadsWhileValid = 0;
@@ -153,7 +154,7 @@ void main() {
       final adapter = _Expiring401ThenOkAdapter();
       final dio = Dio(
         BaseOptions(
-          baseUrl: 'https://linux.do',
+          baseUrl: 'https://www.nodeloc.com',
           validateStatus: (status) => status != null && status < 400,
         ),
       )..httpClientAdapter = adapter;
@@ -164,10 +165,7 @@ void main() {
         RecoveryCoordinator(
           dio: dio,
           policies: [
-            SessionSelfHealPolicy(
-              readSessionToken: readToken,
-              sentinel: null,
-            ),
+            SessionSelfHealPolicy(readSessionToken: readToken, sentinel: null),
           ],
           budgetFactory: () => AttemptBudget(maxAttempts: 2),
         ),
@@ -191,7 +189,7 @@ void main() {
 
 AttemptOutcome _failure(
   int status, {
-  String url = 'https://linux.do/latest.json',
+  String url = 'https://www.nodeloc.com/latest.json',
   Object? body,
 }) => AttemptOutcome.failure(
   error: _dioError(status, url: url, body: body),
@@ -200,7 +198,7 @@ AttemptOutcome _failure(
 
 DioException _dioError(
   int status, {
-  String url = 'https://linux.do/latest.json',
+  String url = 'https://www.nodeloc.com/latest.json',
   Object? body,
 }) {
   final uri = Uri.parse(url);

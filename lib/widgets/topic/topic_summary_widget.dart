@@ -10,7 +10,7 @@ import '../../providers/selected_topic_provider.dart';
 import '../common/error_view.dart';
 import '../common/relative_time_text.dart';
 import '../markdown_editor/markdown_renderer.dart';
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 话题 AI 摘要组件
 class TopicSummaryWidget extends ConsumerWidget {

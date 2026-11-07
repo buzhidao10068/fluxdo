@@ -27,9 +27,9 @@ void main() {
   tearDownAll(() => cookieDirectory.delete(recursive: true));
 
   Future<void> seed(String value) =>
-      jar.cookieJar.saveFromResponse(Uri.parse('https://linux.do'), [
+      jar.cookieJar.saveFromResponse(Uri.parse('https://www.nodeloc.com'), [
         io.Cookie('cf_clearance', value)
-          ..domain = '.linux.do'
+          ..domain = '.nodeloc.com'
           ..path = '/',
       ]);
 
@@ -107,17 +107,20 @@ void main() {
       '${viaCdp ? 'CDP' : 'CookieManager'} 确认值淘汰 expires 更晚的旧分区副本',
       () async {
         final enhanced = jar.cookieJar as EnhancedPersistCookieJar;
-        await enhanced.saveCanonicalCookies(Uri.parse('https://linux.do'), [
-          CanonicalCookie(
-            name: 'cf_clearance',
-            value: 'long-lived-residue',
-            domain: '.linux.do',
-            hostOnly: false,
-            expiresAt: DateTime.now().add(const Duration(days: 30)),
-            partitionKey: 'old-partition',
-            partitioned: true,
-          ),
-        ]);
+        await enhanced.saveCanonicalCookies(
+          Uri.parse('https://www.nodeloc.com'),
+          [
+            CanonicalCookie(
+              name: 'cf_clearance',
+              value: 'long-lived-residue',
+              domain: '.nodeloc.com',
+              hostOnly: false,
+              expiresAt: DateTime.now().add(const Duration(days: 30)),
+              partitionKey: 'old-partition',
+              partitioned: true,
+            ),
+          ],
+        );
         platform.cookies.values = [cfTestCookie('fresh')];
         if (viaCdp) platform.controller.partitionKey = 'new-partition';
 

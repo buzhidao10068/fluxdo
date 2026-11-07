@@ -572,9 +572,12 @@ class _CreateTopicPageState extends ConsumerState<CreateTopicPage> {
   /// 官方只把**外部**链接做成精选链接（`only feature links to external
   /// sites`），指向本站的 URL 直接不处理。
   bool _isSameSiteUrl(TitleUrlInfo candidate) {
-    final siteHost = Uri.tryParse(AppConstants.baseUrl)?.host;
-    if (siteHost == null || siteHost.isEmpty) return false;
-    return candidate.uri.host.toLowerCase() == siteHost.toLowerCase();
+    final host = candidate.uri.host;
+    if (host.isEmpty) return false;
+    // 按站点根域匹配（主域 / 裸域 / 任意子域），统一走 [AppConstants.isSiteHost]。
+    // 历史坑：只认 baseUrl 的精确 host（`www.`）时，裸域与兄弟子域的本站链接
+    // 会被当成外部链接 → 误做精选链接 + onebox。
+    return AppConstants.isSiteHost(host);
   }
 
   /// 标题输入的单一监听入口（草稿 / 计数器 / featured link 三合一）。

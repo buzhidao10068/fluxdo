@@ -23,7 +23,7 @@ void main() {
               builder: (context) => TextButton(
                 onPressed: () => callbacks.linkHandler(
                   context,
-                  'https://linux.do/t/topic/42/7',
+                  'https://www.nodeloc.com/t/topic/42/7',
                 ),
                 child: const Text('打开站内链接'),
               ),
@@ -65,7 +65,7 @@ void main() {
               builder: (context) => TextButton(
                 onPressed: () => callbacks.linkHandler(
                   context,
-                  'https://linux.do/t/topic/99',
+                  'https://www.nodeloc.com/t/topic/99',
                 ),
                 child: const Text('替换右栏'),
               ),

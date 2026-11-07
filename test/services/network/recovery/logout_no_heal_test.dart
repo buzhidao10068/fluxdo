@@ -60,7 +60,7 @@ void main() {
       // 与策略侧排除互为纵深防护:任一生效即可避免卡死
       final options = RequestOptions(
         path: '/session/someuser',
-        baseUrl: 'https://linux.do',
+        baseUrl: 'https://www.nodeloc.com',
         method: 'DELETE',
         extra: const {'noRecovery': true},
       );
@@ -77,7 +77,7 @@ AttemptOutcome _failure(
 }) {
   final options = RequestOptions(
     path: path,
-    baseUrl: 'https://linux.do',
+    baseUrl: 'https://www.nodeloc.com',
     method: method,
   );
   final response = Response<dynamic>(

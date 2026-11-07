@@ -50,7 +50,7 @@ import 'template_insert_dialog.dart';
 
 import 'package:common_ui/common_ui.dart';
 
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// Markdown 工具栏组件
 /// 提供格式化按钮、预览切换和图片上传功能（纯按钮行，不含面板和间距）

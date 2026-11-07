@@ -21,7 +21,7 @@ import '../common/smart_avatar.dart';
 import '../../utils/fluxdo_render_callbacks.dart';
 import '../../pages/category_topics_page.dart';
 import '../../pages/tag_topics_page.dart';
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 预览弹窗中的操作项
 class PreviewAction {

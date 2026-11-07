@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 import 'markdown_toolbar.dart';
 
 /// 编辑器工具定义

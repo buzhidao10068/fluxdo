@@ -43,6 +43,10 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- 深链统一由 app_links / DeepLinkService 分发，避免 Flutter 默认路由重复处理。 -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <!--
                 为 Flutter 工具链 / adb 提供 MAIN+LAUNCHER，使其能发现并启动 .MainActivity。
                 添加 data scheme 防止启动器匹配此 filter（launcher intent 无 data → 不匹配），
@@ -91,6 +95,46 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="http" android:host="www.nodeloc.com" android:pathPrefix="/session/email-login/" />
+            </intent-filter>
+            <!-- 裸域与 www 使用相同路径；每个 host 的 /.well-known/assetlinks.json
+                 均需直接返回有效关联（不可依赖裸域 301）。Android 12+ 未验证时，
+                 普通网页链接通常由浏览器打开；手动批准域名或显式 Intent 仍可测试
+                 应用内处理。Manifest 声明不代表系统域名验证已经通过。 -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="nodeloc.com" android:pathPrefix="/t/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="nodeloc.com" android:pathPrefix="/t/" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="nodeloc.com" android:pathPrefix="/u/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="nodeloc.com" android:pathPrefix="/u/" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="nodeloc.com" android:pathPrefix="/session/email-login/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="nodeloc.com" android:pathPrefix="/session/email-login/" />
             </intent-filter>
             <!-- Custom URL Scheme -->
             <intent-filter>

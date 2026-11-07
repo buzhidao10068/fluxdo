@@ -14,12 +14,13 @@ import 'network/adapters/webview_http_adapter.dart';
 /// 包装 Dio 的 http.BaseClient 实现,给 flutter_cache_manager / image 下载用。
 ///
 /// **双 dio 策略**(按 request URL host 选)
-/// - **主域** (`linux.do` 及其子域):用 `_mainDomainDio`,带 cookie。
+/// - **本站** (站点主域 / 裸域 / 任意子域,由 [AppConstants.isSiteHost] 判定):
+///   用 `_mainDomainDio`,带 cookie。
 ///   原因:`/uploads/secure-uploads/*` 私密图、user_avatar 在某些配置下需要
 ///   session cookie 才能访问。关掉 cookie 会让这些图 403。
 ///   但仍关掉 CfChallenge / Retry(图片自动 CF 验证 / 重试意义不大)。
 ///
-/// - **第三方 CDN** (`s.pwsh.us.kg` / `cdn.ldstatic.com` / 其它):用 `_cdnDio`,
+/// - **第三方 CDN** (站点之外的其它域):用 `_cdnDio`,
 ///   **完全不带 cookie**。CDN 根本不读 cookie header,带过去也无效;反而每张
 ///   图都触发 cookie jar 磁盘读写,30 张同屏 = 60 次磁盘 IO + cookie jar 锁
 ///   争用,这是"PNG 等半天"的根因。
@@ -98,19 +99,20 @@ class DioHttpClient extends http.BaseClient {
   static void sinkPending(DownloadChannel channel, String url) =>
       _semaphoreOf(channel).sink(url);
 
-  /// 提取 [AppConstants.baseUrl] 的 host(例如 `linux.do`),用于判断主域。
-  /// 注意是 host 比对而不是 URL prefix 比对 —— 子域(`auth.linux.do` 等)
-  /// 也算主域,会走带 cookie 的 dio。
-  static final String _mainHost = Uri.parse(AppConstants.baseUrl).host;
-
-  bool _isMainDomain(Uri url) {
+  /// 请求是否指向本站(主域 / 裸域 / 任意子域),用于判断是否走带 cookie 的 dio。
+  ///
+  /// 统一委托 [AppConstants.isSiteHost] 判定,不在本文件维护第二份域名匹配逻辑。
+  /// 历史坑:baseUrl 带 `www.` 时,若用 `host == mainHost || host.endsWith('.mainHost')`
+  /// 只会命中 `*.www.nodeloc.com`,把裸域 `nodeloc.com` 与兄弟子域
+  /// `cdn.nodeloc.com` 误判成 CDN → 走不带 cookie 的通道 → secure-uploads
+  /// 私密图 403。[AppConstants.isSiteHost] 按站点根域匹配,已覆盖上述全部情况。
+  static bool isSiteRequest(Uri url) {
     final host = url.host;
     if (host.isEmpty) return false;
-    // 主域精确匹配 或 是主域的子域(*.linux.do)
-    return host == _mainHost || host.endsWith('.$_mainHost');
+    return AppConstants.isSiteHost(host);
   }
 
-  dio.Dio _selectDio(Uri url) => _isMainDomain(url) ? _mainDomainDio : _cdnDio;
+  dio.Dio _selectDio(Uri url) => isSiteRequest(url) ? _mainDomainDio : _cdnDio;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -137,7 +139,7 @@ class DioHttpClient extends http.BaseClient {
       }
 
       // 按 host 选 dio:主域用 _mainDomainDio(带 cookie),CDN 用 _cdnDio(lean)
-      final isMainDomain = _isMainDomain(request.url);
+      final isMainDomain = isSiteRequest(request.url);
       final extra = <String, dynamic>{};
       if (isMainDomain) {
         extra[WebViewHttpAdapter.resourceKindExtraKey] =
@@ -217,7 +219,7 @@ class DioHttpClient extends http.BaseClient {
     final semaphore = _semaphoreOf(channel);
     await semaphore.acquire(url.toString(), priority);
     try {
-      final isMainDomain = _isMainDomain(url);
+      final isMainDomain = isSiteRequest(url);
       final extra = <String, dynamic>{};
       if (isMainDomain) {
         extra[WebViewHttpAdapter.resourceKindExtraKey] =

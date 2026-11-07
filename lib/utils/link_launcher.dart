@@ -25,13 +25,12 @@ const _browserChannel = MethodChannel('com.github.lingyan000.fluxdo/browser');
 
 /// 检查 URL 是否属于站点内部链接（主域名或子域名）
 bool isInternalUrl(Uri uri) {
-  final baseUri = Uri.tryParse(AppConstants.baseUrl);
-  if (baseUri == null) return false;
+  // 按站点根域判定：裸域（nodeloc.com）与任意子域都算本站。
+  // baseUrl 带 www，若直接用 baseUri.host 会把裸域链接误判成外链。
+  final rootHost = AppConstants.siteRootDomain.toLowerCase();
+  final host = uri.host.toLowerCase();
 
-  final baseHost = baseUri.host; // 如 'linux.do'
-  final host = uri.host;
-
-  final hostMatches = host == baseHost || host.endsWith('.$baseHost');
+  final hostMatches = host == rootHost || host.endsWith('.$rootHost');
   if (!hostMatches) return false;
 
   return UrlHelper.samePrefix(uri.toString());
@@ -209,7 +208,6 @@ Future<void> launchContentLink(
     return;
   }
 
-
   // 3. 图片直链(站点自己的域名/CDN/S3 CDN)→ 直接用内置查看器打开,
   //    与网页端一致(点图直接看大图,不当"外部链接"走离站确认弹窗)。
   //    只信任站点自己配置的域名——不是随便一个图片后缀的外链都放行。
@@ -219,7 +217,10 @@ Future<void> launchContentLink(
     );
     final uri = Uri.tryParse(fullUrl);
     if (uri != null && UrlHelper.isTrustedImageHost(uri)) {
-      await ImageViewerPage.open(context, DiscourseImageUtils.getOriginalUrl(fullUrl));
+      await ImageViewerPage.open(
+        context,
+        DiscourseImageUtils.getOriginalUrl(fullUrl),
+      );
       return;
     }
   }

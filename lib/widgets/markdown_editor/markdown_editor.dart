@@ -29,7 +29,7 @@ import 'markdown_toolbar.dart';
 
 import 'package:pangutext/pangutext.dart';
 
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 编辑器面板类型
 enum EditorPanelType { none, keyboard, emoji }

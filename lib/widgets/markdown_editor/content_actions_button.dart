@@ -19,7 +19,7 @@ import 'dart:math' as math;
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 import '../common/radial_long_press_menu.dart';
 import 'composer_action_menu.dart';
 

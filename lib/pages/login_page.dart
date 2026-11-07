@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants.dart';
 import '../l10n/s.dart';
 import '../services/auth_session.dart';
 import '../services/cf_challenge_service.dart';
@@ -428,7 +429,7 @@ class _LoginPageState extends State<LoginPage>
                 : LoginForm(
                     onSubmit: _handleSubmit,
                     onForgotPassword: () =>
-                        _loginWithWebView('https://linux.do/password-reset'),
+                        _loginWithWebView('${AppConstants.baseUrl}/password-reset'),
                     savedUsername: _savedUsername,
                     savedPassword: _savedPassword,
                   ),

@@ -5,6 +5,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 
 import 'cookie_full_info.dart';
+import '../../../constants.dart';
 import 'cookie_jar_service.dart';
 import 'raw_cookie_writer.dart';
 import 'session_cookie_sentinel.dart';
@@ -302,7 +303,7 @@ class CookieDevtoolsExtension {
   // helpers
   // ---------------------------------------------------------------------------
 
-  String _defaultUrl() => 'https://linux.do';
+  String _defaultUrl() => AppConstants.baseUrl;
 
   developer.ServiceExtensionResponse _okResult(Object data) {
     return developer.ServiceExtensionResponse.result(jsonEncode(data));

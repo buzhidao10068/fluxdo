@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter/services.dart';
 import '../../utils/dialog_utils.dart';
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 话题进度指示器，类似 Discourse 的 topic-progress 组件
 /// 显示当前索引/总数（基于 stream 索引，不是 post_number）

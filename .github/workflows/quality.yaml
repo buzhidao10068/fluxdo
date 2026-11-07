@@ -1,0 +1,101 @@
+name: Quality Gate
+
+# 本分支交付第 1 步 Android 站点身份门禁；其它平台与 P1/ECH 后续单独提交。
+#
+# 背景：原 build.yaml 只在 `v*` tag 触发，且全流程没有 flutter analyze /
+# flutter test / cargo test 步骤。历史上多次「该改而没改」的问题因此直接
+# 发版，例如：
+# - 剪贴板正则丢失 raw string，转义全丢、RegExp 编译失败，剪贴板检测静默失效；
+# - baseUrl 带 www 后 7 处 host 判定退化成「只认 www.」，裸域/子域被误判为外链；
+# - 测试夹具仍写 linux.do，与已改的实现不一致（断言重复、用例失效）；
+# - Rust 子模块的 ECH 内置域只改了 Dart 侧，改动没进仓 → ECH 对新站 100% 失效。
+#
+# 本 workflow 把「改完立刻验证」变成强制项，不依赖发版时机。
+#
+# 分级说明（阻塞 / 非阻塞）：
+# - 阻塞项：本地化生成 + flutter analyze + 站点身份定向测试。
+# - 非阻塞项：全量 flutter test。
+#   上游基线本身有 245 个失败（其中 test/widgets/markdown_editor/ 单独跑就有
+#   145 个真实失败，另有大量跨目录并发污染导致的失败），与站点身份无关。
+#   直接设为阻塞会让每个 PR 都红，失去门禁意义；因此先以非阻塞方式持续
+#   记录基线，待基线修好后改为 continue-on-error: false。
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.47.4'
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart:
+    name: Android P0 静态检查与站点身份定向测试
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # 这两组 Dart 产物被 .gitignore 排除；pub get 不会运行项目的 slang 生成器。
+      # 必须在 analyze 前生成，避免本地已有产物掩盖干净检出的缺失。
+      - name: Generate localizations
+        run: dart tool/gen_l10n.dart
+
+      # 门禁 1：静态检查（阻塞）。
+      # 范围刻意限定为 lib/ + 站点身份相关测试文件，原因：
+      # - devtools_extension/ 与 packages/*/example/ 有 10 个历史 error
+      #   （缺 integration_test / devtools_extensions 依赖），与主工程无关；
+      # - test/compat/flutter_347_test.dart 等 3 个历史 error 属上游基线。
+      # lib/ 当前 0 error / 0 warning，只有 info 级 lint，因此关闭 fatal 选项。
+      # 站点身份类改动最常见的翻车方式是「把 raw string 写成普通字符串」
+      # 「host 判定口径改了一半」，analyze 能挡住其中一部分，其余由门禁 2 兜住。
+      - name: flutter analyze (lib + site identity tests)
+        run: |
+          flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings \
+            lib \
+            test/services/dio_http_client_site_host_test.dart \
+            test/services/deep_link_service_test.dart \
+            test/services/clipboard_topic_link_service_test.dart \
+            test/utils/url_helper_test.dart \
+            test/platform/android_site_identity_test.dart \
+            test/services/network/webview/webview_adapter_settings_service_test.dart
+
+      # 门禁 2：站点身份定向测试（阻塞）。
+      # 覆盖 baseUrl/siteHost/siteRootDomain/isSiteHost 派生、深链 host 白名单、
+      # 剪贴板域名识别、可信图片域名、Android Manifest 的 host/path/scheme
+      # 以及 app_links 路由配置。系统域名验证仍需站方 assetlinks.json。
+      # 这些用例刻意包含裸域 / 子域 / 恶意域（evilnodeloc.com 等），
+      # 正是历史上反复回归的那几条。
+      - name: flutter test (site identity)
+        run: |
+          flutter test --no-pub \
+            test/services/dio_http_client_site_host_test.dart \
+            test/services/deep_link_service_test.dart \
+            test/services/clipboard_topic_link_service_test.dart \
+            test/utils/url_helper_test.dart \
+            test/platform/android_site_identity_test.dart \
+            test/services/network/webview/webview_adapter_settings_service_test.dart
+
+      # 全量测试：非阻塞，仅记录基线漂移（见文件头说明）。
+      - name: flutter test (full, non-blocking)
+        continue-on-error: true
+        run: flutter test --no-pub

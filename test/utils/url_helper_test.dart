@@ -20,18 +20,20 @@ void main() {
     test('keeps internal page links on origin host', () {
       expect(
         UrlHelper.resolveUrl('/t/topic-slug/123'),
-        'https://linux.do/t/topic-slug/123',
+        'https://www.nodeloc.com/t/topic-slug/123',
       );
     });
 
     test('keeps relative upload paths on origin host', () {
       expect(
         UrlHelper.resolveUrl('/uploads/short-url/test.pdf'),
-        'https://linux.do/uploads/short-url/test.pdf',
+        'https://www.nodeloc.com/uploads/short-url/test.pdf',
       );
       expect(
-        UrlHelper.resolveUrl('/uploads/default/optimized/1X/test_2_690x200.png'),
-        'https://linux.do/uploads/default/optimized/1X/test_2_690x200.png',
+        UrlHelper.resolveUrl(
+          '/uploads/default/optimized/1X/test_2_690x200.png',
+        ),
+        'https://www.nodeloc.com/uploads/default/optimized/1X/test_2_690x200.png',
       );
     });
 
@@ -45,30 +47,32 @@ void main() {
 
       expect(
         UrlHelper.resolveUrl('/t/topic-slug/123'),
-        'https://linux.do/forum/t/topic-slug/123',
+        'https://www.nodeloc.com/forum/t/topic-slug/123',
       );
       expect(
         UrlHelper.resolveUrl('/forum/t/topic-slug/123'),
-        'https://linux.do/forum/t/topic-slug/123',
+        'https://www.nodeloc.com/forum/t/topic-slug/123',
       );
-      expect(
-        UrlHelper.resolveUrl('/'),
-        'https://linux.do/forum',
-      );
+      expect(UrlHelper.resolveUrl('/'), 'https://www.nodeloc.com/forum');
     });
 
-    test('does not rewrite protocol-relative S3 URL when not using CDN helper', () {
-      expect(
-        UrlHelper.resolveUrl('//uploads.example.com/original/1X/test.png'),
-        'https://uploads.example.com/original/1X/test.png',
-      );
-    });
+    test(
+      'does not rewrite protocol-relative S3 URL when not using CDN helper',
+      () {
+        expect(
+          UrlHelper.resolveUrl('//uploads.example.com/original/1X/test.png'),
+          'https://uploads.example.com/original/1X/test.png',
+        );
+      },
+    );
   });
 
   group('UrlHelper.resolveUrlWithCdn', () {
     test('uses CDN for relative media paths', () {
       expect(
-        UrlHelper.resolveUrlWithCdn('/uploads/default/optimized/1X/test_2_690x200.png'),
+        UrlHelper.resolveUrlWithCdn(
+          '/uploads/default/optimized/1X/test_2_690x200.png',
+        ),
         'https://cdn.example.com/uploads/default/optimized/1X/test_2_690x200.png',
       );
       expect(
@@ -90,15 +94,64 @@ void main() {
         'https://cdn.example.com/forum/images/emoji/twitter/smile.png?v=12',
       );
       expect(
-        UrlHelper.resolveUrlWithCdn('/forum/images/emoji/twitter/smile.png?v=12'),
+        UrlHelper.resolveUrlWithCdn(
+          '/forum/images/emoji/twitter/smile.png?v=12',
+        ),
         'https://cdn.example.com/forum/images/emoji/twitter/smile.png?v=12',
       );
     });
 
     test('rewrites protocol-relative S3 URL to S3 CDN', () {
       expect(
-        UrlHelper.resolveUrlWithCdn('//uploads.example.com/original/1X/test.png'),
+        UrlHelper.resolveUrlWithCdn(
+          '//uploads.example.com/original/1X/test.png',
+        ),
         'https://cdn3.example.com/original/1X/test.png',
+      );
+    });
+  });
+
+  group('UrlHelper.isTrustedImageHost', () {
+    test('accepts site host, bare domain and sibling subdomains', () {
+      // 回归点：曾按 baseUrl 精确 host（www.nodeloc.com）匹配，
+      // 裸域与兄弟子域被误判成外链 → 图片直链弹离站确认框。
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://www.nodeloc.com/uploads/a.png')),
+        isTrue,
+      );
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://nodeloc.com/uploads/a.png')),
+        isTrue,
+      );
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://cdn.nodeloc.com/uploads/a.png')),
+        isTrue,
+      );
+    });
+
+    test('rejects external hosts and similar domains', () {
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://example.com/a.png')),
+        isFalse,
+      );
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://notnodeloc.com/a.png')),
+        isFalse,
+      );
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://nodeloc.com.evil.com/a.png')),
+        isFalse,
+      );
+    });
+
+    test('still trusts configured CDN and S3 CDN hosts', () {
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://cdn.example.com/a.png')),
+        isTrue,
+      );
+      expect(
+        UrlHelper.isTrustedImageHost(Uri.parse('https://cdn3.example.com/a.png')),
+        isTrue,
       );
     });
   });

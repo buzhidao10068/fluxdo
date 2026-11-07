@@ -95,10 +95,12 @@ class UrlHelper {
       return host == baseHost || host.endsWith('.$baseHost');
     }
 
-    final siteBase = Uri.tryParse(AppConstants.baseUrl)?.host;
-    if (siteBase != null && siteBase.isNotEmpty) {
-      if (host == siteBase || host.endsWith('.$siteBase')) return true;
-    }
+    // 站点域按**根域**匹配（主域 / 裸域 / 任意子域），统一走
+    // [AppConstants.isSiteHost]，避免各模块各写一份域名口径。
+    // 历史坑：baseUrl 带 `www.` 时按精确 host 匹配，只覆盖 `www.nodeloc.com`
+    // 与 `*.www.nodeloc.com`，把裸域 `nodeloc.com` 与兄弟子域
+    // `cdn.nodeloc.com` 误判成外链 → 图片直链不走查看器、弹离站确认框。
+    if (AppConstants.isSiteHost(host)) return true;
     return hostMatches(_cdnUrl) || hostMatches(_s3CdnUrl);
   }
 

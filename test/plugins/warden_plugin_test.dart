@@ -3,7 +3,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluxdo/l10n/s.dart';
 import 'package:fluxdo/models/category.dart';
-import 'package:fluxdo/services/local_notification_service.dart' show navigatorKey;
+import 'package:fluxdo/services/local_notification_service.dart'
+    show navigatorKey;
 import 'package:fluxdo/plugins/plugins.dart';
 import 'package:fluxdo/widgets/common/character_counts_overlay.dart';
 import 'package:fluxdo/widgets/topic/topic_editor_helpers.dart';
@@ -96,10 +97,7 @@ void main() {
         'warden_min_post_length': 16,
         'warden_min_first_post_length': 30,
       };
-      expect(
-        plugin.composerMinPostLength(8, _ctx(extras: extras)),
-        16,
-      );
+      expect(plugin.composerMinPostLength(8, _ctx(extras: extras)), 16);
       expect(
         plugin.composerMinPostLength(
           20,
@@ -190,11 +188,25 @@ void main() {
   group('PluginRegistry.resolveMinPostLength', () {
     tearDown(PluginRegistry.resetOverride);
 
-    test('linux.do 默认注册了 warden 插件', () {
-      expect(PluginRegistry.plugins.whereType<WardenPlugin>(), isNotEmpty);
+    test('NodeLoc 默认不注册 warden 插件', () {
+      // NodeLoc 未启用 discourse-warden，站点配置 plugins 为空。
+      expect(PluginRegistry.plugins, isEmpty);
+      expect(PluginRegistry.plugins.whereType<WardenPlugin>(), isEmpty);
     });
 
-    test('真实分类数据：搞七捻三回复要 16 字', () {
+    test('未注册插件时分类下限不生效（NodeLoc min_post_length = 1）', () {
+      final category = Category.fromJson(_categoryJson(minPost: 16));
+      expect(
+        PluginRegistry.resolveMinPostLength(
+          1,
+          _ctx(extras: category.pluginExtras),
+        ),
+        1,
+      );
+    });
+
+    test('注入 warden 后真实分类数据生效：搞七捻三回复要 16 字', () {
+      PluginRegistry.overridePlugins(const [WardenPlugin()]);
       final category = Category.fromJson(_categoryJson(minPost: 16));
       expect(
         PluginRegistry.resolveMinPostLength(
@@ -208,6 +220,10 @@ void main() {
 
   group('CharacterCountsOverlay', () {
     testWidgets('字数不足时显示 `x / min` + 社区警告', (tester) async {
+      // NodeLoc 默认不注册 CharacterCountsPlugin，这里显式注入以验证
+      // overlay 在「插件提供了警告文案」时的渲染路径。
+      PluginRegistry.overridePlugins(const [CharacterCountsPlugin()]);
+      addTearDown(PluginRegistry.resetOverride);
       await tester.pumpWidget(
         _host(const CharacterCountsOverlay(length: 12, minimumLength: 16)),
       );

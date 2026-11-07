@@ -34,6 +34,42 @@ void main() {
       }
     });
 
+    test('识别裸域 nodeloc.com 话题链接', () {
+      // 回归点：站点裸域 301 到 www，用户分享裸域链接很常见，
+      // 代码侧支持（_isAllowedHost 接受 siteRootDomain），必须显式锁定。
+      final cases = <String, String>{
+        'https://nodeloc.com/t/123': 'https://nodeloc.com/t/123',
+        'https://nodeloc.com/t/topic-slug/123':
+            'https://nodeloc.com/t/topic-slug/123',
+        'https://nodeloc.com/t/123/5': 'https://nodeloc.com/t/123/5',
+        // 无 scheme 的裸域
+        'nodeloc.com/t/123、': 'https://nodeloc.com/t/123',
+        // 大小写与默认端口
+        'HTTPS://NODELOC.COM:443/t/123': 'https://nodeloc.com/t/123',
+      };
+
+      for (final entry in cases.entries) {
+        final candidate = service.findFirstTopicLink(entry.key);
+
+        expect(candidate, isNotNull, reason: entry.key);
+        expect(candidate!.normalizedUrl, entry.value, reason: entry.key);
+      }
+    });
+
+    test('相似域与外域不触发（含裸域相似域反例）', () {
+      // 防子串误判：裸域被正确识别后，必须确认相似域不会蹭进来。
+      final invalidTexts = <String>[
+        'https://notnodeloc.com/t/123',
+        'https://nodeloc.com.evil.com/t/123',
+        'https://evil-nodeloc.com/t/123',
+        'https://www.nodeloc.com.evil.com/t/123',
+      ];
+
+      for (final text in invalidTexts) {
+        expect(service.findFirstTopicLink(text), isNull, reason: text);
+      }
+    });
+
     test('从任意文本中提取第一个有效话题链接', () {
       final candidate = service.findFirstTopicLink(
         '先忽略 https://www.nodeloc.com/u/user，再打开 https://www.nodeloc.com/t/first/101 和 https://www.nodeloc.com/t/second/202',
@@ -45,7 +81,7 @@ void main() {
 
     test('保留 query 和 fragment，并统一 scheme 与 host 大小写', () {
       final candidate = service.findFirstTopicLink(
-        '看看 HTTPS://WWW.LINUX.DO:443/t/topic-slug/123/5?foo=Bar#post_5.',
+        '看看 HTTPS://WWW.NODELOC.COM:443/t/topic-slug/123/5?foo=Bar#post_5.',
       );
 
       expect(candidate, isNotNull);
@@ -110,7 +146,9 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
             if (call.method == 'Clipboard.getData') {
-              return <String, dynamic>{'text': 'https://www.nodeloc.com:443/t/123'};
+              return <String, dynamic>{
+                'text': 'https://www.nodeloc.com:443/t/123',
+              };
             }
             return null;
           });
@@ -128,7 +166,9 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
             if (call.method == 'Clipboard.getData') {
-              return <String, dynamic>{'text': 'https://www.nodeloc.com:443/t/123'};
+              return <String, dynamic>{
+                'text': 'https://www.nodeloc.com:443/t/123',
+              };
             }
             return null;
           });
@@ -150,7 +190,9 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
             if (call.method == 'Clipboard.getData') {
-              return <String, dynamic>{'text': 'https://www.nodeloc.com:443/t/123'};
+              return <String, dynamic>{
+                'text': 'https://www.nodeloc.com:443/t/123',
+              };
             }
             return null;
           });
@@ -166,7 +208,9 @@ void main() {
     test('标记已提示时写入持久化 hash', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
-      final candidate = service.findFirstTopicLink('https://www.nodeloc.com/t/123');
+      final candidate = service.findFirstTopicLink(
+        'https://www.nodeloc.com/t/123',
+      );
       expect(candidate, isNotNull);
 
       await service.markPrompted(candidate!, prefs: prefs);

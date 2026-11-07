@@ -14,7 +14,7 @@ import '../../utils/platform_utils.dart';
 import '../common/category_selection_sheet.dart';
 import '../common/tag_selection_sheet.dart';
 import '../common/topic_badges.dart';
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 话题编辑器辅助函数和 Widgets
 /// 用于 CreateTopicPage 和 EditTopicPage 的公共逻辑

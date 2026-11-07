@@ -18,7 +18,7 @@ import '../common/error_view.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../common/paged_list_footer.dart';
-import '../../../../../l10n/s.dart';
+import '../../l10n/s.dart';
 
 /// 表情包市场浏览面板 (Bottom Sheet)
 ///

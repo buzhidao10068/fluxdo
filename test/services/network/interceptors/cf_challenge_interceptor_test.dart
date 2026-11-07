@@ -60,7 +60,7 @@ void main() {
       );
 
       final adapter = _ChallengeAdapter(retryStatus);
-      final dio = Dio(BaseOptions(baseUrl: 'https://linux.do'))
+      final dio = Dio(BaseOptions(baseUrl: 'https://www.nodeloc.com'))
         ..httpClientAdapter = adapter;
       dio.interceptors.add(
         CfChallengeInterceptor(dio: dio, cookieJarService: jar),
@@ -94,11 +94,14 @@ void main() {
       Completer<Cookie?>? pendingValue;
       if (delayedSnapshot) {
         // 验证期间另一路先写回了副本，验证页的 Cookie 快照此刻尚在读取。
-        await jar.cookieJar.saveFromResponse(Uri.parse('https://linux.do'), [
-          io.Cookie('cf_clearance', 'bootstrap-copy')
-            ..domain = '.linux.do'
-            ..path = '/',
-        ]);
+        await jar.cookieJar.saveFromResponse(
+          Uri.parse('https://www.nodeloc.com'),
+          [
+            io.Cookie('cf_clearance', 'bootstrap-copy')
+              ..domain = '.nodeloc.com'
+              ..path = '/',
+          ],
+        );
         pendingValue = Completer<Cookie?>();
         platform.cookies.readValue = (_) => pendingValue!.future;
         platform.cookies.values = [cfTestCookie('current-webview-value')];
@@ -106,7 +109,7 @@ void main() {
       platform.webView!.params.onReceivedHttpError!(
         platform.controller.wrapped,
         WebResourceRequest(
-          url: WebUri('https://linux.do/challenge'),
+          url: WebUri('https://www.nodeloc.com/challenge'),
           isForMainFrame: true,
         ),
         WebResourceResponse(statusCode: 404),

@@ -10,7 +10,7 @@ void main() {
     }) {
       return RequestOptions(
         path: '/latest.json',
-        baseUrl: 'https://linux.do',
+        baseUrl: 'https://www.nodeloc.com',
         responseType: responseType,
         extra: extra ?? <String, dynamic>{},
       );
@@ -52,7 +52,7 @@ void main() {
     RequestOptions options(
       String path, {
       String method = 'GET',
-      String baseUrl = 'https://linux.do',
+      String baseUrl = 'https://www.nodeloc.com',
       ResponseType? responseType,
       Map<String, dynamic>? headers,
     }) {
@@ -83,7 +83,7 @@ void main() {
       );
       expect(
         requestCanUseWebViewAdapter(
-          options('/api/v1/user', baseUrl: 'https://cdk.linux.do'),
+          options('/api/v1/user', baseUrl: 'https://cdk.nodeloc.com'),
         ),
         isFalse,
       );

@@ -51,7 +51,7 @@ class CfTestPlatform extends InAppWebViewPlatform {
 Cookie cfTestCookie(String value) => Cookie(
   name: 'cf_clearance',
   value: value,
-  domain: '.linux.do',
+  domain: '.nodeloc.com',
   path: '/',
   isSecure: true,
   isHttpOnly: true,
@@ -152,7 +152,7 @@ class CfTestController extends PlatformInAppWebViewController {
   }
 
   @override
-  Future<WebUri?> getUrl() async => WebUri('https://linux.do/challenge');
+  Future<WebUri?> getUrl() async => WebUri('https://www.nodeloc.com/challenge');
 
   @override
   Future<dynamic> callDevToolsProtocolMethod({

@@ -830,13 +830,19 @@ class CookieJarService {
   static String get appBaseHost =>
       Uri.parse(AppConstants.baseUrl).host.toLowerCase();
 
-  /// 检查 domain 是否匹配应用主域
+  /// 检查 domain 是否属于应用站点域
+  ///
+  /// 按**根域**匹配：baseUrl 带 www 时，CF 按 zone 顶点下发的
+  /// `.nodeloc.com` 域 cookie（如 cf_clearance）也必须算本站，
+  /// 否则会被当成外域 cookie 丢弃。
+  /// 注意与 [appBaseHost] 区分：host-only cookie 语义上就绑定在精确主域，
+  /// 那边保持精确匹配不放宽。
   static bool matchesAppHost(String? domain) {
-    final baseHost = appBaseHost;
+    final rootHost = AppConstants.siteRootDomain.toLowerCase();
     final normalized = domain?.trim().replaceFirst(RegExp(r'^\.'), '');
     if (normalized == null || normalized.isEmpty) return true;
     final lower = normalized.toLowerCase();
-    return lower == baseHost || lower.endsWith('.$baseHost');
+    return lower == rootHost || lower.endsWith('.$rootHost');
   }
 
   /// Windows：通过页面级 controller 的 CDP 读取实时 cookie 值。

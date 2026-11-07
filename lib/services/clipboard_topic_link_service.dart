@@ -30,7 +30,7 @@ class ClipboardTopicLinkService {
   static RegExp _buildSiteUrlRegex() {
     final root = RegExp.escape(AppConstants.siteRootDomain.toLowerCase());
     return RegExp(
-      '(?:(?:https?:)?//)?(?:www\.)?' + root + '(?::\d+)?/[^\s<>"\]\)）}】》]+',
+      r'(?:(?:https?:)?//)?(?:www\.)?' + root + r'(?::\d+)?/[^\s<>"\]\)）}】》]+',
       caseSensitive: false,
     );
   }

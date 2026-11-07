@@ -21,24 +21,26 @@ void main() {
       expect(DiscourseImageUtils.isUploadUrl('upload://abc123.png'), isTrue);
     });
 
-    test('recognizes relative short-url paths (video/audio hand-written src)',
-        () {
-      expect(
-        DiscourseImageUtils.isUploadUrl(
-          '/uploads/short-url/lwDn83PDeB3xOUoEeZI9v77qGJa.xz',
-        ),
-        isTrue,
-      );
-      expect(
-        DiscourseImageUtils.isUploadUrl('/uploads/short-url/abc.mp3'),
-        isTrue,
-      );
-    });
+    test(
+      'recognizes relative short-url paths (video/audio hand-written src)',
+      () {
+        expect(
+          DiscourseImageUtils.isUploadUrl(
+            '/uploads/short-url/lwDn83PDeB3xOUoEeZI9v77qGJa.xz',
+          ),
+          isTrue,
+        );
+        expect(
+          DiscourseImageUtils.isUploadUrl('/uploads/short-url/abc.mp3'),
+          isTrue,
+        );
+      },
+    );
 
     test('recognizes absolute short-url on origin / CDN hosts only', () {
       expect(
         DiscourseImageUtils.isUploadUrl(
-          'https://linux.do/uploads/short-url/abc.xz',
+          'https://www.nodeloc.com/uploads/short-url/abc.xz',
         ),
         isTrue,
       );
@@ -64,8 +66,10 @@ void main() {
         ),
         isFalse,
       );
-      expect(DiscourseImageUtils.isUploadUrl('https://example.com/a.mp4'),
-          isFalse);
+      expect(
+        DiscourseImageUtils.isUploadUrl('https://example.com/a.mp4'),
+        isFalse,
+      );
     });
   });
 
@@ -83,7 +87,7 @@ void main() {
       );
       expect(
         DiscourseImageUtils.getCachedUploadUrl(
-          'https://linux.do/uploads/short-url/lwDn83PDeB3xOUoEeZI9v77qGJa.xz',
+          'https://www.nodeloc.com/uploads/short-url/lwDn83PDeB3xOUoEeZI9v77qGJa.xz',
         ),
         'https://cdn3.example.com/original/4X/9/6/d/96de.mp4',
       );

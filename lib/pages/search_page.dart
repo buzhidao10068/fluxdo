@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/shortcut_binding.dart';
 import '../providers/discourse_providers.dart';
 import '../models/search_filter.dart';
@@ -8,7 +9,9 @@ import '../models/search_result.dart';
 import '../services/preloaded_data_service.dart';
 import '../widgets/common/smart_avatar.dart';
 import '../widgets/common/error_view.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../widgets/common/paged_list_footer.dart';
 import '../widgets/search/search_filter_panel.dart';
 import '../widgets/search/search_list_skeleton.dart';
@@ -20,7 +23,9 @@ import '../providers/shortcut_provider.dart';
 import '../widgets/layout/master_detail_layout.dart';
 import '../utils/responsive.dart';
 import 'topic_detail_page/topic_detail_page.dart';
+
 import 'package:dio/dio.dart';
+
 import '../services/app_error_handler.dart';
 import '../l10n/s.dart';
 import 'user_profile_page.dart';
@@ -31,15 +36,17 @@ import '../utils/discourse_url_parser.dart';
 import '../widgets/common/search_capsule.dart';
 import '../utils/link_launcher.dart';
 import 'settings_page.dart';
+import '../constants.dart';
 
-/// 搜索框中的站内直达链接标准化。支持完整 URL、`linux.do/...` 和相对路径；
+/// 搜索框中的站内直达链接标准化。支持完整 URL、`站点域/...` 和相对路径；
 /// 普通关键词原样返回，后续由 [isInternalUrlString] 判定后继续普通搜索。
 @visibleForTesting
 String normalizeDirectSearchLink(String rawValue) {
   final value = rawValue.trim();
   if (value.startsWith('/')) return value;
+  final root = RegExp.escape(AppConstants.siteRootDomain.toLowerCase());
   if (RegExp(
-    r'^(?:www\.)?linux\.do(?::\d+)?/',
+    '^(?:www\\.)?$root(?::\\d+)?/',
     caseSensitive: false,
   ).hasMatch(value)) {
     return 'https://$value';
@@ -423,9 +430,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   /// 从查询字符串中提取排序方式
   SearchSortOrder? _extractOrderFromQuery(String query) {
-    final match = RegExp(
-      r'order:(relevance|latest|likes|views|latest_topic)',
-    ).firstMatch(query);
+    final match = RegExp(r'order:(relevance|latest|likes|views|latest_topic)')
+        .firstMatch(query);
     if (match == null) return null;
     final orderValue = match.group(1);
     return SearchSortOrder.values.firstWhere(

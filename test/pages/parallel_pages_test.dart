@@ -22,12 +22,12 @@ Widget _layoutProbe(Size size) {
 void main() {
   test('搜索框标准化无协议的 L 站链接', () {
     expect(
-      normalizeDirectSearchLink('linux.do/t/topic/123/4'),
-      'https://linux.do/t/topic/123/4',
+      normalizeDirectSearchLink('nodeloc.com/t/topic/123/4'),
+      'https://nodeloc.com/t/topic/123/4',
     );
     expect(
-      normalizeDirectSearchLink('www.linux.do/u/alice'),
-      'https://www.linux.do/u/alice',
+      normalizeDirectSearchLink('www.nodeloc.com/u/alice'),
+      'https://www.nodeloc.com/u/alice',
     );
     expect(normalizeDirectSearchLink('/t/123'), '/t/123');
     expect(normalizeDirectSearchLink('普通关键词'), '普通关键词');

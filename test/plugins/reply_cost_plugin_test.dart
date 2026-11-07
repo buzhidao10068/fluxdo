@@ -109,27 +109,21 @@ void main() {
   group('TopicPluginContext.readInt', () {
     test('解析数字与数字字符串，其他返回 null', () {
       expect(
-        const TopicPluginContext(topicJson: {'reply_cost': 3}).readInt(
-          'reply_cost',
-        ),
+        const TopicPluginContext(topicJson: {'reply_cost': 3})
+            .readInt('reply_cost'),
         3,
       );
       expect(
-        const TopicPluginContext(topicJson: {'reply_cost': '4'}).readInt(
-          'reply_cost',
-        ),
+        const TopicPluginContext(topicJson: {'reply_cost': '4'})
+            .readInt('reply_cost'),
         4,
       );
       expect(
-        const TopicPluginContext(topicJson: {'reply_cost': 'abc'}).readInt(
-          'reply_cost',
-        ),
+        const TopicPluginContext(topicJson: {'reply_cost': 'abc'})
+            .readInt('reply_cost'),
         isNull,
       );
-      expect(
-        const TopicPluginContext().readInt('reply_cost'),
-        isNull,
-      );
+      expect(const TopicPluginContext().readInt('reply_cost'), isNull);
     });
   });
 
@@ -199,11 +193,16 @@ void main() {
   group('PluginRegistry', () {
     tearDown(PluginRegistry.resetOverride);
 
-    test('linux.do 默认注册了回复扣积分插件', () {
-      expect(
-        PluginRegistry.plugins.whereType<ReplyCostPlugin>(),
-        isNotEmpty,
-      );
+    test('NodeLoc 默认不注册回复扣积分插件', () {
+      // NodeLoc 未启用 discourse-reply-cost，站点配置 plugins 为空，
+      // 因此默认不应有任何回复前校验插件参与。
+      expect(PluginRegistry.plugins, isEmpty);
+      expect(PluginRegistry.plugins.whereType<ReplyCostPlugin>(), isEmpty);
+    });
+
+    test('注入插件后才会参与校验', () {
+      PluginRegistry.overridePlugins(const [ReplyCostPlugin()]);
+      expect(PluginRegistry.plugins.whereType<ReplyCostPlugin>(), isNotEmpty);
     });
 
     testWidgets('任一插件否决即中止，后续插件不再执行', (tester) async {
