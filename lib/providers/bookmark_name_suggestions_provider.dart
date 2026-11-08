@@ -36,32 +36,52 @@ class BookmarkNameSuggestionsNotifier extends Notifier<List<String>> {
   String? _accountId;
   StreamSubscription<void>? _repoSubscription;
   Future<void>? _initFuture;
+  int _generation = 0;
+
+  bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   @override
   List<String> build() {
+    final generation = ++_generation;
+    final username = ref.watch(currentUsernameProvider.future);
+    _accountId = null;
     final repo = ref.read(bookmarksRepositoryProvider);
     _repoSubscription = repo.watch().listen((_) {
-      unawaited(_refreshFromRepo(repo));
+      if (!_isCurrent(generation)) return;
+      unawaited(_refreshFromRepo(repo, generation).catchError((Object _) {}));
     });
+    final subscription = _repoSubscription!;
     ref.onDispose(() {
-      _repoSubscription?.cancel();
+      if (_generation == generation) _generation++;
+      unawaited(subscription.cancel());
     });
-    _initFuture = _initialize(repo);
+    _initFuture = _initialize(
+      repo,
+      username,
+      generation,
+    ).catchError((Object _) {});
     return const <String>[];
   }
 
-  Future<void> _initialize(BookmarksRepository repo) async {
-    final username = await ref.read(currentUsernameProvider.future);
-    if (username == null) return;
+  Future<void> _initialize(
+    BookmarksRepository repo,
+    Future<String?> usernameFuture,
+    int generation,
+  ) async {
+    final username = await usernameFuture;
+    if (!_isCurrent(generation) || username == null) return;
     _accountId = username;
-    await _refreshFromRepo(repo);
+    await _refreshFromRepo(repo, generation);
   }
 
-  Future<void> _refreshFromRepo(BookmarksRepository repo) async {
+  Future<void> _refreshFromRepo(
+    BookmarksRepository repo,
+    int generation,
+  ) async {
     final accountId = _accountId;
     if (accountId == null) return;
     final counts = await repo.nameCounts(accountId);
-    if (!ref.mounted) return;
+    if (!_isCurrent(generation) || accountId != _accountId) return;
     final sorted = counts.keys.toList()
       ..sort((a, b) {
         final cmp = counts[b]!.compareTo(counts[a]!);
@@ -93,6 +113,7 @@ class BookmarkNameSuggestionsNotifier extends Notifier<List<String>> {
   /// repository 重新派生——如果 repository 还在对账中，结果可能不完整，
   /// 但不会阻塞编辑面板打开。
   Future<List<String>> ensureLoaded() async {
+    final generation = _generation;
     if (state.isNotEmpty) {
       return state;
     }
@@ -104,11 +125,12 @@ class BookmarkNameSuggestionsNotifier extends Notifier<List<String>> {
         // 初始化失败不应该卡住编辑面板，保留当前 state 返回。
       }
     }
+    if (!_isCurrent(generation)) return const [];
     final accountId = _accountId;
     if (accountId == null) return state;
     final repo = ref.read(bookmarksRepositoryProvider);
-    await _refreshFromRepo(repo);
-    return state;
+    await _refreshFromRepo(repo, generation);
+    return _isCurrent(generation) ? state : const [];
   }
 
   /// 兼容旧 API：state 为空时后台触发一次 [ensureLoaded]。
@@ -118,6 +140,9 @@ class BookmarkNameSuggestionsNotifier extends Notifier<List<String>> {
   }
 
   void clearCache() {
+    _generation++;
+    _accountId = null;
+    _initFuture = null;
     state = const <String>[];
   }
 }

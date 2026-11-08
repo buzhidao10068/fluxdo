@@ -50,19 +50,12 @@ class CookieJarService {
   /// 用于 Priming 重灌 / Sentinel sweep / 反向同步等核心同步路径。
   /// 添加新 cookie 前需评估:
   /// - 该 cookie 是否影响 WV 中用户登录态 / 业务页面渲染
-  /// - 该 cookie 是否会出现在主站 (linux.do) 响应中
+  /// - 该 cookie 是否会出现在当前论坛响应中
   ///
   /// 当前条目:
   /// - authCookieNames: Discourse 论坛登录 cookie
   /// - cf_clearance: Cloudflare 反爬虫挑战 token
-  /// - linux_do_credit_session_id: LDC 应用 session,主站会读它来显示
-  ///   LDC 积分/绑定状态, WV 缺失会导致 LDC 相关 UI 失效
-  static Set<String> criticalCookieNames = {
-    ...authCookieNames,
-    'cf_clearance',
-    'linux_do_credit_session_id',
-    'linux_do_cdk_session_id',
-  };
+  static Set<String> criticalCookieNames = {...authCookieNames, 'cf_clearance'};
 
   CookieManager get webViewCookieManager =>
       WindowsWebViewEnvironmentService.instance.cookieManager;
@@ -116,7 +109,7 @@ class CookieJarService {
   ///
   /// 触发原因: 早期版本 boundary_sync 把 WebView 回读的裸 host(无前导点)
   /// 当作 Domain= 直接写入 jar, 导致 _t 等 host-only cookie 变成 domain
-  /// cookie 挂到 connect.linux.do / cdk.linux.do 等子域名上；另一些版本会把
+  /// cookie 挂到站点其它子域名上；另一些版本会把
   /// `_t` 存成不同 path。这里统一收敛，避免老用户继续受影响。
   Future<void> _migrateSessionCookiesToHostOnly() async {
     await enforceAuthCookiePolicy(reason: 'legacy_migration');
@@ -126,7 +119,7 @@ class CookieJarService {
   ///
   /// `_t` / `_forum_session` 是 Discourse 主站登录态，只应存在一份：
   /// `(hostOnly=true, domain=baseHost, path=/)`。WebView/CDP 回读时经常会把
-  /// host-only cookie 表现成 `domain=linux.do`，或者在不同 path/domain 下留下
+  /// host-only cookie 表现成 `domain=www.nodeloc.com`，或者在不同 path/domain 下留下
   /// 副本；这些副本不能进入 jar 的长期状态。
   Future<int> enforceAuthCookiePolicy({
     String reason = 'unknown',

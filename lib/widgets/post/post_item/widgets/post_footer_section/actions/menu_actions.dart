@@ -152,58 +152,6 @@ extension _PostFooterMenuActions on _PostFooterSectionState {
                     widget.onShareAsImage!();
                   },
                 ),
-              if (!isGuest)
-                Builder(
-                  builder: (context) {
-                    final currentUser = ref.read(currentUserProvider).value;
-                    final isOwnPost =
-                        currentUser != null &&
-                        currentUser.username == widget.post.username;
-                    if (isOwnPost || widget.post.userId == null) {
-                      return const SizedBox.shrink();
-                    }
-                    return ListTile(
-                      leading: Icon(
-                        Symbols.volunteer_activism_rounded,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      title: Text(context.l10n.post_tipLdc),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        try {
-                          final credentials = await ref.read(
-                            ldcRewardCredentialsProvider.future,
-                          );
-                          if (!mounted) return;
-                          if (credentials == null) {
-                            ToastService.showError(
-                              S.current.toast_rewardNotConfigured,
-                            );
-                            return;
-                          }
-                        } catch (error) {
-                          debugPrint('[LdcReward] 读取凭证失败: $error');
-                          ToastService.showError(
-                            S.current.common_operationFailed(error.toString()),
-                          );
-                          return;
-                        }
-                        if (!mounted) return;
-                        showLdcRewardSheet(
-                          this.context,
-                          RewardTargetInfo(
-                            userId: widget.post.userId!,
-                            username: widget.post.username,
-                            name: widget.post.name,
-                            avatarUrl: widget.post.getAvatarUrl(),
-                            topicId: widget.topicId,
-                            postId: widget.post.id,
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
               if (!isGuest &&
                   (widget.post.canAcceptAnswer ||
                       widget.post.canUnacceptAnswer))

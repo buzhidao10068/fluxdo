@@ -7,6 +7,16 @@ import 'package:fluxdo/services/network/cookie/app_cookie_manager.dart';
 import 'package:fluxdo/services/network/cookie/cookie_jar_service.dart';
 
 void main() {
+  test('关键 Cookie 仅保留论坛登录与 Cloudflare 通行证', () {
+    expect(CookieJarService.criticalCookieNames, {
+      '_t',
+      '_forum_session',
+      'cf_clearance',
+    });
+    expect(CookieJarService.matchesAppHost('connect.linux.do'), isFalse);
+    expect(CookieJarService.matchesAppHost('.nodeloc.com'), isTrue);
+  });
+
   group('AppCookieManager.loadCookies', () {
     test('忽略 RequestOptions 上残留的旧 Cookie 头，始终使用 CookieJar 最新值', () async {
       final jar = CookieJar();
@@ -82,8 +92,8 @@ void main() {
 
       final manager = AppCookieManager(jar);
       final options = RequestOptions(
-        path: '/api/v1/oauth/user-info',
-        baseUrl: 'https://cdk.nodeloc.com',
+        path: '/api/session',
+        baseUrl: 'https://service.nodeloc.com',
         method: 'GET',
       );
 
@@ -146,21 +156,21 @@ void main() {
   });
 
   group('CookieJarService.buildCookieHeaderForRequest', () {
-    test('CDK retry header 保留业务 domain cookie 且不带主站登录 cookie', () {
+    test('子域请求保留业务 domain cookie 且不带主站登录 cookie', () {
       final header = CookieJarService.buildCookieHeaderForRequest([
         Cookie('cf_clearance', 'cf-token')
           ..domain = '.nodeloc.com'
           ..path = '/',
-        Cookie('linux_do_cdk_session_id', 'cdk-token')
+        Cookie('service_session_id', 'service-token')
           ..domain = '.nodeloc.com'
           ..path = '/',
         Cookie('_t', 'polluted-token')
           ..domain = '.nodeloc.com'
           ..path = '/',
-      ], Uri.parse('https://cdk.nodeloc.com/api/v1/oauth/user-info'));
+      ], Uri.parse('https://service.nodeloc.com/api/session'));
 
       expect(header, contains('cf_clearance=cf-token'));
-      expect(header, contains('linux_do_cdk_session_id=cdk-token'));
+      expect(header, contains('service_session_id=service-token'));
       expect(header, isNot(contains('_t=')));
     });
 

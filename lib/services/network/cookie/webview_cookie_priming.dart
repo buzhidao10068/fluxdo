@@ -127,7 +127,7 @@ class WebViewCookiePriming {
 
       // 2. 从 jar 读"当前 url 适用的所有 cookie" (RFC 6265 domain matching)
       // 不再按 criticalCookieNames 过滤 — 该列表 hard-code 维护不可持续
-      // (每次发现新业务 cookie 如 LDC/CDK 没同步就要追加, 永远列不全)。
+      // (每次发现站点新增 cookie 没同步就要追加, 永远列不全)。
       // jar 是 source of truth, loadCanonicalCookiesForRequest 已经按
       // RFC 6265 domain matching 选出"该 url 适用的全部 cookie", 直接
       // 全量同步到 WV 即可。
@@ -377,9 +377,9 @@ class WebViewCookiePriming {
     int postCount,
   ) async {
     if (cookie.name != 'cf_clearance' || postCount <= 1) return false;
-    final variants = (await _writer.getAllCookieInfos(
-      url,
-    )).where((variant) => variant.name == cookie.name).toList(growable: false);
+    final variants = (await _writer.getAllCookieInfos(url))
+        .where((variant) => variant.name == cookie.name)
+        .toList(growable: false);
     if (variants.length <= 1) return false;
     final sameValue = variants.every(
       (variant) => variant.value == cookie.value,

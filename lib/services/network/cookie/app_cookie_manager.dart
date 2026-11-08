@@ -452,25 +452,6 @@ class AppCookieManager extends Interceptor {
       });
     }
 
-    if (options.uri.host == 'connect.linux.do') {
-      final authCookies = requestCookies
-          .where((cookie) => cookie.name == 'auth.session-token')
-          .map(
-            (cookie) =>
-                '${cookie.domain ?? '<host-only>'}|${cookie.path ?? '/'}|len=${cookie.value.length}',
-          )
-          .toList(growable: false);
-      if (authCookies.isNotEmpty) {
-        debugPrint(
-          '[CookieManager] request cookies for connect.linux.do: $authCookies',
-        );
-      } else {
-        debugPrint(
-          '[CookieManager] request cookies for connect.linux.do: <none>',
-        );
-      }
-    }
-
     return cookies;
   }
 
@@ -508,25 +489,6 @@ class AppCookieManager extends Interceptor {
         .expand((cookie) => cookie)
         .where((cookie) => cookie.isNotEmpty)
         .toList(growable: false);
-
-    final locationHeader = response.headers.value(HttpHeaders.locationHeader);
-    final requestUri = response.requestOptions.uri;
-    final hasAuthSessionToken = flattenedSetCookies.any(
-      (header) => header.toLowerCase().startsWith('auth.session-token='),
-    );
-    if (hasAuthSessionToken) {
-      debugPrint(
-        '[CookieManager] auth.session-token Set-Cookie from '
-        '${response.requestOptions.method} ${requestUri.toString()} '
-        '(status=${response.statusCode}, location=$locationHeader, '
-        'allowRedirectSetCookie=${response.requestOptions.spec.allowRedirectSetCookie})',
-      );
-      for (final header in flattenedSetCookies.where(
-        (item) => item.toLowerCase().startsWith('auth.session-token='),
-      )) {
-        debugPrint('[CookieManager] auth.session-token raw: $header');
-      }
-    }
 
     final List<Cookie> cookies = flattenedSetCookies
         .map((str) => Cookie.fromSetCookieValue(str))
@@ -678,13 +640,6 @@ class AppCookieManager extends Interceptor {
       reason: 'dio_response',
     );
 
-    if (hasAuthSessionToken) {
-      debugPrint(
-        '[CookieManager] auth.session-token primary save uri: '
-        '${resolvedUri.toString()} (pathB=$isPathB)',
-      );
-    }
-
     // dio→WebView 增量同步（仅路径 A）：critical cookie 的新值立即推 WebView。
     // 破除 "WV 只有 1 份旧值 → sweep ensureUnique 直接 noop 不更新" 的死角，
     // 避免必须重启 priming 才同步（用户反馈的 dio→WV 不及时）。删除指令交给
@@ -711,7 +666,7 @@ class AppCookieManager extends Interceptor {
     // 对响应里 *所有* cookie 触发 sweep (不再按 critical 过滤):
     // - 路径 A: sweep 内部从 jar 读 winner 写 WV (保证两端一致)
     // - 路径 B: sweep 内部从 WV 读 winner 反向写 jar (WV 已自写)
-    // 全量 sweep 是为了不漏掉新业务 cookie (如 LDC/CDK 等)。
+    // 全量 sweep 是为了不漏掉站点新增的 cookie。
     // 同步等所有 sweep 完成,保证 next handler 时两端一致。
     if (filteredCookies.isNotEmpty) {
       final sweepFutures = filteredCookies.map((cookie) {
@@ -739,12 +694,6 @@ class AppCookieManager extends Interceptor {
       await Future.wait(
         locations.map((location) async {
           final redirectUri = baseUri.resolve(location);
-          if (hasAuthSessionToken) {
-            debugPrint(
-              '[CookieManager] auth.session-token redirect save uri: '
-              '${redirectUri.toString()}',
-            );
-          }
           await cookieJar.saveFromResponse(redirectUri, filteredCookies);
           final redirectAuthIntents = _finalAuthCookieIntents(filteredCookies);
           await _deleteAuthCookieVariantsIfManaged(

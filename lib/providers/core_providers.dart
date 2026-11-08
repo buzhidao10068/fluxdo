@@ -2,8 +2,10 @@
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/user.dart';
 import '../services/discourse/discourse_service.dart';
 import '../services/preloaded_data_service.dart';
@@ -18,9 +20,11 @@ final authErrorProvider = StreamProvider<String>((ref) {
 });
 
 /// 认证状态变化 Provider（登录/退出）
-final authStateProvider = StreamProvider<void>((ref) {
+final authStateProvider = StreamProvider<int>((ref) {
   final service = ref.watch(discourseServiceProvider);
-  return service.authStateStream;
+  // Riverpod 3 会过滤相等值；void 事件连续为 null，需转成递增版本。
+  var revision = 0;
+  return service.authStateStream.map((_) => ++revision);
 });
 
 /// 当前用户 Provider
@@ -30,21 +34,31 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
   static const String _cacheUserKey = 'current_user_cache_username';
   static const Duration _refreshCooldown = Duration(minutes: 2);
   DateTime? _lastRefreshTime;
+  int _generation = 0;
+
+  bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   @override
   FutureOr<User?> build() {
+    final generation = ++_generation;
+    ref.onDispose(() {
+      if (_generation == generation) _generation++;
+    });
     final service = ref.read(discourseServiceProvider);
     final preloaded = PreloadedDataService().currentUserSync;
     if (preloaded != null) {
       final preloadedUser = User.fromJson(preloaded);
       service.currentUserNotifier.value = preloadedUser;
-      _refreshUser(service, preloadedUser);
+      _refreshUser(service, preloadedUser, generation);
       return preloadedUser;
     }
-    return _loadUserWithCache(service);
+    return _loadUserWithCache(service, generation);
   }
 
-  Future<User?> _loadUserWithCache(DiscourseService service) async {
+  Future<User?> _loadUserWithCache(
+    DiscourseService service,
+    int generation,
+  ) async {
     // 先把上次会话的缓存亮出来(毫秒级,登出时缓存会被清,存在即上次已
     // 登录):本 provider 可能在预加载完成前就被 watch(如根部印记层第一
     // 帧即 watch,早于 PreheatGate 放行),此时 build 的同步快路径拿不到
@@ -52,6 +66,7 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     // 接口,若等它们串行完成才给首值,头像/发帖入口要白等数秒。
     // 渐进 emit:缓存 → preloaded → 接口终态。
     final prefs = await SharedPreferences.getInstance();
+    if (!_isCurrent(generation)) return null;
     final cached = prefs.getString(_cacheKey);
     User? cachedUser;
     if (cached != null) {
@@ -65,6 +80,7 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     }
 
     final hasToken = await service.isLoggedIn();
+    if (!_isCurrent(generation)) return null;
     if (!hasToken) {
       await prefs.remove(_cacheKey);
       await prefs.remove(_cacheUserKey);
@@ -73,15 +89,17 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
 
     try {
       final preloadedUser = await service.getPreloadedCurrentUser();
+      if (!_isCurrent(generation)) return null;
       if (preloadedUser != null) {
         state = AsyncValue.data(preloadedUser);
       }
       final user = await service.getCurrentUser();
+      if (!_isCurrent(generation)) return null;
       final resolved = user == null
           ? preloadedUser
           : (preloadedUser == null ? user : _mergeUser(user, preloadedUser));
       if (resolved != null) {
-        _saveCache(prefs, resolved);
+        await _saveCache(prefs, resolved, generation);
         return resolved;
       }
       // 网络返回 null 但本地有缓存时，保守处理：保留缓存返回，
@@ -107,6 +125,7 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
   /// 静默刷新，带冷却时间（默认 2 分钟内不重复请求）
   /// 不提前 emit 中间状态，只在拿到结果后更新一次，避免多余 rebuild
   Future<void> refreshSilently({bool force = false}) async {
+    final generation = _generation;
     if (!force &&
         _lastRefreshTime != null &&
         DateTime.now().difference(_lastRefreshTime!) < _refreshCooldown) {
@@ -116,13 +135,17 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     final previous = state.value;
     try {
       final user = await _loadUser(service);
+      if (!_isCurrent(generation)) return;
       _lastRefreshTime = DateTime.now();
       if (user != null) {
         final prefs = await SharedPreferences.getInstance();
-        _saveCache(prefs, user);
+        if (!_isCurrent(generation)) return;
+        await _saveCache(prefs, user, generation);
       }
+      if (!_isCurrent(generation)) return;
       state = AsyncValue.data(user ?? previous);
     } catch (e, st) {
+      if (!_isCurrent(generation)) return;
       // 刷新失败，保留旧数据并标记错误状态（用于离线提示）
       if (previous != null) {
         state = AsyncValue<User?>.error(
@@ -133,14 +156,21 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     }
   }
 
-  void _refreshUser(DiscourseService service, User preloadedUser) {
+  void _refreshUser(
+    DiscourseService service,
+    User preloadedUser,
+    int generation,
+  ) {
     Future(() async {
       try {
+        if (!_isCurrent(generation)) return;
         final user = await service.getCurrentUser();
-        if (user == null) return;
+        if (!_isCurrent(generation) || user == null) return;
         final merged = _mergeUser(user, preloadedUser);
         final prefs = await SharedPreferences.getInstance();
-        _saveCache(prefs, merged);
+        if (!_isCurrent(generation)) return;
+        await _saveCache(prefs, merged, generation);
+        if (!_isCurrent(generation)) return;
         state = AsyncValue.data(merged);
       } catch (_) {
         // 后台刷新失败时静默忽略，refreshSilently 会负责设置错误状态
@@ -163,12 +193,20 @@ class CurrentUserNotifier extends AsyncNotifier<User?> {
     );
   }
 
-  void _saveCache(SharedPreferences prefs, User user) {
-    prefs.setString(_cacheKey, jsonEncode(user.toCacheJson()));
-    prefs.setString(_cacheUserKey, user.username);
+  Future<void> _saveCache(
+    SharedPreferences prefs,
+    User user,
+    int generation,
+  ) async {
+    if (!_isCurrent(generation)) return;
+    await prefs.setString(_cacheKey, jsonEncode(user.toCacheJson()));
+    if (!_isCurrent(generation)) return;
+    await prefs.setString(_cacheUserKey, user.username);
   }
 
   Future<void> clearCache() async {
+    _generation++;
+    _lastRefreshTime = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_cacheKey);
     await prefs.remove(_cacheUserKey);
@@ -189,9 +227,17 @@ final systemUserAvatarTemplateProvider = FutureProvider<String?>((ref) async {
 class UserSummaryNotifier extends AsyncNotifier<UserSummary?> {
   static const String _cacheKey = 'user_summary_cache';
   static const String _cacheUserKey = 'user_summary_cache_username';
+  int _generation = 0;
+  int _refreshRequest = 0;
+
+  bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   @override
   Future<UserSummary?> build() async {
+    final generation = ++_generation;
+    ref.onDispose(() {
+      if (_generation == generation) _generation++;
+    });
     final service = ref.watch(discourseServiceProvider);
     final currentUsername = ref.watch(
       currentUserProvider.select((value) => value.value?.username),
@@ -199,14 +245,16 @@ class UserSummaryNotifier extends AsyncNotifier<UserSummary?> {
     final username =
         currentUsername ??
         (await ref.watch(currentUserProvider.future))?.username;
-    if (username == null) return null;
+    if (!_isCurrent(generation) || username == null) return null;
 
     // 先尝试从 SP 读取缓存
     final prefs = await SharedPreferences.getInstance();
+    if (!_isCurrent(generation)) return null;
     final cachedUser = prefs.getString(_cacheUserKey);
     // 切换账号时清除旧缓存
     if (cachedUser != null && cachedUser != username) {
       await _clearCache(prefs);
+      if (!_isCurrent(generation)) return null;
     }
 
     final cached = prefs.getString(_cacheKey);
@@ -222,15 +270,21 @@ class UserSummaryNotifier extends AsyncNotifier<UserSummary?> {
 
     try {
       final summary = await service.getUserSummary(username);
-      _saveCache(prefs, summary, username);
+      if (!_isCurrent(generation)) return null;
+      await _saveCache(prefs, summary, username, generation);
+      if (!_isCurrent(generation)) return null;
       return summary;
     } catch (e) {
+      if (!_isCurrent(generation)) return null;
       if (cachedSummary != null) return cachedSummary;
       rethrow;
     }
   }
 
   Future<void> refresh() async {
+    final generation = _generation;
+    final request = ++_refreshRequest;
+    bool isCurrent() => _isCurrent(generation) && request == _refreshRequest;
     final previous = state.value;
     try {
       final service = ref.read(discourseServiceProvider);
@@ -241,10 +295,14 @@ class UserSummaryNotifier extends AsyncNotifier<UserSummary?> {
         user.username,
         forceRefresh: true,
       );
+      if (!isCurrent()) return;
       final prefs = await SharedPreferences.getInstance();
-      _saveCache(prefs, summary, user.username);
+      if (!isCurrent()) return;
+      await _saveCache(prefs, summary, user.username, generation);
+      if (!isCurrent()) return;
       state = AsyncValue.data(summary);
     } catch (e, st) {
+      if (!isCurrent()) return;
       // 刷新失败，保留旧数据并标记错误状态
       if (previous != null) {
         state = AsyncValue<UserSummary?>.error(
@@ -255,16 +313,20 @@ class UserSummaryNotifier extends AsyncNotifier<UserSummary?> {
     }
   }
 
-  void _saveCache(
+  Future<void> _saveCache(
     SharedPreferences prefs,
     UserSummary summary,
     String username,
-  ) {
-    prefs.setString(_cacheKey, jsonEncode(summary.toCacheJson()));
-    prefs.setString(_cacheUserKey, username);
+    int generation,
+  ) async {
+    if (!_isCurrent(generation)) return;
+    await prefs.setString(_cacheKey, jsonEncode(summary.toCacheJson()));
+    if (!_isCurrent(generation)) return;
+    await prefs.setString(_cacheUserKey, username);
   }
 
   Future<void> clearCache() async {
+    _generation++;
     final prefs = await SharedPreferences.getInstance();
     await _clearCache(prefs);
   }

@@ -18,7 +18,9 @@ final bookmarksPageLoaderProvider = Provider<BookmarkPageLoader>((ref) {
 
 /// 当前账号 username，作为本地书签缓存的隔离键；抽出来便于测试注入。
 final currentUsernameProvider = FutureProvider<String?>((ref) async {
-  return ref.read(discourseServiceProvider).getUsername();
+  // 账号来自本地会话，不必等待远端个人资料；认证变化时重新读取隔离键。
+  ref.watch(authStateProvider);
+  return ref.watch(discourseServiceProvider).getUsername();
 });
 
 /// 删除书签后的本地缓存写穿透(全入口统一收口):
@@ -134,6 +136,9 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
   bool _isLoadingMore = false;
   bool _isLoadMoreFailed = false;
   StreamSubscription<void>? _repoSubscription;
+  int _generation = 0;
+
+  bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   /// 当前账号下所有 bookmark_id 的完整顺序(按 updated_at DESC)。
   List<int> _orderedIds = const <int>[];
@@ -155,8 +160,19 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
 
   @override
   Future<List<Topic>> build() async {
+    final generation = ++_generation;
+    final usernameFuture = ref.watch(currentUsernameProvider.future);
     _repo = ref.read(bookmarksRepositoryProvider);
-    final username = await ref.read(currentUsernameProvider.future);
+    _accountId = null;
+    _orderedIds = const [];
+    _loadedCount = 0;
+    _isLoadingMore = false;
+    _isLoadMoreFailed = false;
+    ref.onDispose(() {
+      if (_generation == generation) _generation++;
+    });
+    final username = await usernameFuture;
+    if (!_isCurrent(generation)) return const [];
     if (username == null) {
       // 未登录或测试环境读不到 username:直接返回空表,不阻塞 UI。
       return const <Topic>[];
@@ -164,14 +180,17 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
     _accountId = username;
 
     _repoSubscription = _repo.watch().listen((_) {
-      if (!ref.mounted) return;
-      unawaited(_refreshFromRepository());
+      if (!_isCurrent(generation)) return;
+      unawaited(_refreshFromRepository(generation));
     });
+    final subscription = _repoSubscription!;
     ref.onDispose(() {
-      _repoSubscription?.cancel();
+      unawaited(subscription.cancel());
     });
 
-    _orderedIds = await _repo.idsOrderedByUpdated(username);
+    final ids = await _repo.idsOrderedByUpdated(username);
+    if (!_isCurrent(generation)) return const [];
+    _orderedIds = ids;
 
     // 数据保鲜交给全局同步控制器:节流/全量判定/失败态都在它那边,
     // 这里只是"提示可以考虑同步",不 await、不影响本地首屏。
@@ -179,24 +198,28 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
       ref.read(bookmarkSyncControllerProvider.notifier).ensureFreshness(),
     );
 
-    return _hydrateFirstPage(username);
+    return _hydrateFirstPage(username, generation);
   }
 
-  Future<List<Topic>> _hydrateFirstPage(String accountId) async {
+  Future<List<Topic>> _hydrateFirstPage(
+    String accountId,
+    int generation,
+  ) async {
     final take = _orderedIds.length < _pageSize
         ? _orderedIds.length
         : _pageSize;
     final ids = _orderedIds.sublist(0, take);
     final records = await _repo.readByIds(accountId, ids);
+    if (!_isCurrent(generation)) return const [];
     _loadedCount = records.length;
     return records.map((r) => r.topic).toList(growable: false);
   }
 
-  Future<void> _refreshFromRepository() async {
+  Future<void> _refreshFromRepository(int generation) async {
     final accountId = _accountId;
     if (accountId == null) return;
     final newIds = await _repo.idsOrderedByUpdated(accountId);
-    if (!ref.mounted) return;
+    if (!_isCurrent(generation)) return;
     _orderedIds = newIds;
     // 保持用户已展示的窗口大小(_loadedCount)重新 hydrate;剩余条目走 loadMore。
     final windowSize = _loadedCount == 0 ? _pageSize : _loadedCount;
@@ -205,7 +228,7 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
         : windowSize;
     final ids = _orderedIds.sublist(0, take);
     final records = await _repo.readByIds(accountId, ids);
-    if (!ref.mounted) return;
+    if (!_isCurrent(generation)) return;
     _loadedCount = records.length;
     state = AsyncValue.data(
       records.map((r) => r.topic).toList(growable: false),
@@ -220,6 +243,7 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
 
   /// 加载下一批本地缓存中的书签条目。
   Future<void> loadMore() async {
+    final generation = _generation;
     final accountId = _accountId;
     if (accountId == null) return;
     if (_isLoadingMore) return;
@@ -233,20 +257,20 @@ class BookmarksNotifier extends AsyncNotifier<List<Topic>> {
           : _loadedCount + _pageSize;
       final ids = _orderedIds.sublist(_loadedCount, end);
       final records = await _repo.readByIds(accountId, ids);
-      if (!ref.mounted) return;
+      if (!_isCurrent(generation)) return;
       final current = state.value ?? const <Topic>[];
-      final merged = <Topic>[
-        ...current,
-        ...records.map((r) => r.topic),
-      ];
+      final merged = <Topic>[...current, ...records.map((r) => r.topic)];
       _loadedCount = merged.length;
       state = AsyncValue.data(List<Topic>.unmodifiable(merged));
     } catch (_) {
+      if (!_isCurrent(generation)) return;
       _isLoadMoreFailed = true;
       _emit();
     } finally {
-      _isLoadingMore = false;
-      _emit();
+      if (_isCurrent(generation)) {
+        _isLoadingMore = false;
+        _emit();
+      }
     }
   }
 

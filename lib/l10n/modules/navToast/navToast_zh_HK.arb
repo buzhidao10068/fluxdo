@@ -21,16 +21,5 @@
   "toast_networkDisconnected": "網絡連接已斷開",
   "toast_networkRestored": "網絡已恢復",
   "toast_operationFailedRetry": "操作失敗，請重試",
-  "toast_pressAgainToExit": "再按一次返回鍵退出",
-  "toast_rewardError": "打賞失敗: {error}",
-  "@toast_rewardError": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
-  "toast_rewardFailed": "打賞失敗",
-  "toast_rewardNotConfigured": "請先配置打賞憑證",
-  "toast_rewardSuccess": "打賞成功！"
+  "toast_pressAgainToExit": "再按一次返回鍵退出"
 }

@@ -53,7 +53,7 @@ class SessionSweepAction extends RecoveryAction {
 /// 会话自愈策略:401 / 419 / `discourse-logged-out` 的透明恢复。
 ///
 /// 迁移自 SelfHealingInterceptor,保留其全部判定语义:
-/// - 只对主站生效(CDK/LDC 子域的 401 是各自 OAuth 过期,重试主站 session
+/// - 只对主站生效(其它子域的 401 属于独立会话,重试主站 session
 ///   无意义,还会把一次过期放大成多次请求);
 /// - `error_type: 'not_logged_in'` 是真登出,不自愈;
 /// - jar 中 `_t` 已失效 = 真登出,不自愈;
@@ -82,8 +82,8 @@ class SessionSelfHealPolicy implements RecoveryPolicy {
 
   @override
   bool canHandle(AttemptOutcome outcome) {
-    final options = outcome.error?.requestOptions ??
-        outcome.response!.requestOptions;
+    final options =
+        outcome.error?.requestOptions ?? outcome.response!.requestOptions;
 
     // 只修主站会话
     if (options.uri.host.toLowerCase() != CookieJarService.appBaseHost) {
@@ -119,13 +119,14 @@ class SessionSelfHealPolicy implements RecoveryPolicy {
 
   @override
   Future<RecoveryDecision> decide(AttemptOutcome outcome) async {
-    final options = outcome.error?.requestOptions ??
-        outcome.response!.requestOptions;
+    final options =
+        outcome.error?.requestOptions ?? outcome.response!.requestOptions;
     final origin = '${options.uri.scheme}://${options.uri.host}';
 
     // jar 中 _t 已失效 → 真登出,自愈没有意义
     final jarToken = await _readSessionToken();
-    final jarValid = jarToken != null &&
+    final jarValid =
+        jarToken != null &&
         jarToken.value.isNotEmpty &&
         (jarToken.expiresAt == null ||
             jarToken.expiresAt!.isAfter(DateTime.now()));

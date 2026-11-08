@@ -51,32 +51,49 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
   final Map<String, DateTime> _lastInitialAttemptAt = {};
   Future<void>? _inFlight;
   bool _pullInFlight = false;
+  int _generation = 0;
+
+  bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   @override
-  BookmarkSyncState build() => const BookmarkSyncState();
+  BookmarkSyncState build() {
+    // 认证变化时也要释放旧任务占用的同步状态。
+    ref.watch(currentUsernameProvider.future);
+    final generation = ++_generation;
+    _inFlight = null;
+    _pullInFlight = false;
+    ref.onDispose(() {
+      if (_generation == generation) _generation++;
+    });
+    return const BookmarkSyncState();
+  }
 
   /// 进页面时的数据保鲜:本地空 → 全量(首次);全量到期(24h)→ 全量;
   /// 否则增量,且带节流窗口。进行中重复调用直接跳过。
   Future<void> ensureFreshness({bool force = false}) async {
+    final generation = _generation;
     if (_inFlight != null) return;
     final completer = Completer<void>();
     _inFlight = completer.future;
     try {
-      await _ensureFreshness(force: force);
+      await _ensureFreshness(force: force, generation: generation);
     } finally {
-      _inFlight = null;
+      if (_isCurrent(generation)) _inFlight = null;
       completer.complete();
     }
   }
 
-  Future<void> _ensureFreshness({required bool force}) async {
+  Future<void> _ensureFreshness({
+    required bool force,
+    required int generation,
+  }) async {
     final accountId = await _accountId();
-    if (accountId == null || !ref.mounted) return;
+    if (accountId == null || !_isCurrent(generation)) return;
     final reconciler = await ref.read(bookmarksReconcilerProvider.future);
-    if (!ref.mounted) return;
+    if (!_isCurrent(generation)) return;
     final repo = ref.read(bookmarksRepositoryProvider);
     final localEmpty = (await repo.idsOrderedByUpdated(accountId)).isEmpty;
-    if (!ref.mounted) return;
+    if (!_isCurrent(generation)) return;
     final now = DateTime.now();
 
     if (localEmpty) {
@@ -87,12 +104,24 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
         return;
       }
       _lastInitialAttemptAt[accountId] = now;
-      await _run(accountId, reconciler, mode: ReconcileMode.full, initial: true);
+      await _run(
+        accountId,
+        reconciler,
+        generation: generation,
+        mode: ReconcileMode.full,
+        initial: true,
+      );
       return;
     }
 
     if (reconciler.isFullReconcileDue(accountId)) {
-      await _run(accountId, reconciler, mode: ReconcileMode.full, initial: false);
+      await _run(
+        accountId,
+        reconciler,
+        generation: generation,
+        mode: ReconcileMode.full,
+        initial: false,
+      );
       return;
     }
 
@@ -105,6 +134,7 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
     await _run(
       accountId,
       reconciler,
+      generation: generation,
       mode: ReconcileMode.incremental,
       initial: false,
     );
@@ -112,27 +142,30 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
 
   /// 手动全量对账(工具栏 sync 按钮):无视节流;已有对账进行中时返回 null。
   Future<ReconcileReport?> manualFullSync() async {
+    final generation = _generation;
     if (_inFlight != null) return null;
     final completer = Completer<void>();
     _inFlight = completer.future;
     try {
       final accountId = await _accountId();
-      if (accountId == null || !ref.mounted) return null;
+      if (accountId == null || !_isCurrent(generation)) return null;
       final reconciler = await ref.read(bookmarksReconcilerProvider.future);
-      if (!ref.mounted) return null;
-      final localEmpty = (await ref
-              .read(bookmarksRepositoryProvider)
-              .idsOrderedByUpdated(accountId))
-          .isEmpty;
-      if (!ref.mounted) return null;
+      if (!_isCurrent(generation)) return null;
+      final localEmpty =
+          (await ref
+                  .read(bookmarksRepositoryProvider)
+                  .idsOrderedByUpdated(accountId))
+              .isEmpty;
+      if (!_isCurrent(generation)) return null;
       return await _run(
         accountId,
         reconciler,
+        generation: generation,
         mode: ReconcileMode.full,
         initial: localEmpty,
       );
     } finally {
-      _inFlight = null;
+      if (_isCurrent(generation)) _inFlight = null;
       completer.complete();
     }
   }
@@ -143,18 +176,23 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
   /// 不需要客户端拼 payload 写穿(列表 entry 的 payload 只有列表接口
   /// 给得全),静默拉一页即可让书签列表立刻反映变化。
   Future<void> pullFirstPage() async {
+    final generation = _generation;
     if (_pullInFlight) return;
     if (state.isSyncing) return; // 对账进行中,其结果自然覆盖
     _pullInFlight = true;
     try {
       final accountId = await _accountId();
-      if (accountId == null || !ref.mounted) return;
+      if (accountId == null || !_isCurrent(generation)) return;
       final reconciler = await ref.read(bookmarksReconcilerProvider.future);
-      await reconciler.pullToRefresh(accountId);
+      if (!_isCurrent(generation)) return;
+      await reconciler.pullToRefresh(
+        accountId,
+        isCurrent: () => _isCurrent(generation),
+      );
     } catch (_) {
       // 静默保鲜失败无害:下次对账会补上
     } finally {
-      _pullInFlight = false;
+      if (_isCurrent(generation)) _pullInFlight = false;
     }
   }
 
@@ -162,9 +200,10 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
   /// 立刻删掉 Hive 对应条目——否则要等下次对账才消失,期间书签列表
   /// 仍展示已删条目。
   Future<void> purgeLocal(int bookmarkId) async {
+    final generation = _generation;
     try {
       final accountId = await _accountId();
-      if (accountId == null || !ref.mounted) return;
+      if (accountId == null || !_isCurrent(generation)) return;
       await ref
           .read(bookmarksRepositoryProvider)
           .deleteOne(accountId, bookmarkId);
@@ -175,6 +214,9 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
 
   /// 登出重置:清掉节流时间戳与失败态。
   void reset() {
+    _generation++;
+    _inFlight = null;
+    _pullInFlight = false;
     _lastFreshAt.clear();
     _lastInitialAttemptAt.clear();
     state = const BookmarkSyncState();
@@ -183,6 +225,7 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
   Future<ReconcileReport?> _run(
     String accountId,
     BookmarksReconciler reconciler, {
+    required int generation,
     required ReconcileMode mode,
     required bool initial,
   }) async {
@@ -194,14 +237,20 @@ class BookmarkSyncController extends Notifier<BookmarkSyncState> {
     ReconcileReport? report;
     try {
       report = mode == ReconcileMode.full
-          ? await reconciler.fullReconcile(accountId)
-          : await reconciler.incrementalReconcile(accountId);
+          ? await reconciler.fullReconcile(
+              accountId,
+              isCurrent: () => _isCurrent(generation),
+            )
+          : await reconciler.incrementalReconcile(
+              accountId,
+              isCurrent: () => _isCurrent(generation),
+            );
     } catch (_) {
       report = null;
     }
     final failed =
         report == null || report.stopReason == ReconcileStopReason.errored;
-    if (!ref.mounted) return report;
+    if (!_isCurrent(generation)) return null;
     if (failed) {
       state = BookmarkSyncState(
         phase: BookmarkSyncPhase.failed,

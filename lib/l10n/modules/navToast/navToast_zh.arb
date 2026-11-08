@@ -21,16 +21,5 @@
   "toast_networkDisconnected": "网络连接已断开",
   "toast_networkRestored": "网络已恢复",
   "toast_operationFailedRetry": "操作失败，请重试",
-  "toast_pressAgainToExit": "再按一次返回键退出",
-  "toast_rewardError": "打赏失败: {error}",
-  "@toast_rewardError": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
-  "toast_rewardFailed": "打赏失败",
-  "toast_rewardNotConfigured": "请先配置打赏凭证",
-  "toast_rewardSuccess": "打赏成功！"
+  "toast_pressAgainToExit": "再按一次返回键退出"
 }

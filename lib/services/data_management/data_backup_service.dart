@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../l10n/s.dart';
 import '../migration_service.dart';
 import '../storage/resilient_secure_storage.dart';
 import '../../utils/share_utils.dart';
@@ -35,8 +34,9 @@ class DataBackupService {
     'ai_post_review_guidelines_cache',
     'current_user_cache',
     'user_summary_cache',
-    'cdk_user_info',
-    'ldc_user_info',
+    // 已移除的旧站生态配置、缓存与旧版凭证：旧备份也不能重新导入。
+    'cdk_',
+    'ldc_',
     'update_', // update_cache / update_cache_time / update_etag
     'sticker_market_', // 贴纸市场缓存(真配置 base_url 在下面精确回捞)
     'bookmark_last_full_sync_',
@@ -177,59 +177,154 @@ class DataBackupService {
     SharedPreferences prefs,
     Map<String, dynamic> backup,
   ) async {
-    final data = backup['data'] as Map<String, dynamic>?;
-    if (data == null) throw FormatException(S.current.backup_missingDataField);
-
-    for (final entry in data.entries) {
-      final key = entry.key;
-      if (!_shouldBackup(key)) continue;
-      final item = entry.value as Map<String, dynamic>;
-      final type = item['type'] as String;
-      final value = item['value'];
-
-      switch (type) {
-        case 'bool':
-          await prefs.setBool(key, value as bool);
-        case 'int':
-          await prefs.setInt(key, value as int);
-        case 'double':
-          await prefs.setDouble(key, (value as num).toDouble());
-        case 'String':
-          await prefs.setString(key, value as String);
-        case 'StringList':
-          await prefs.setStringList(
-            key,
-            (value as List<dynamic>).cast<String>(),
-          );
-      }
+    // 完整预检发生在任何写入之前，包括后半段的 API Key。
+    final plan = _validateBackup(backup);
+    final previousValues = <String, Object?>{
+      for (final key in plan.values.keys) key: prefs.get(key),
+    };
+    final previousApiKeys = <String, String?>{};
+    for (final id in plan.apiKeys.keys) {
+      previousApiKeys[id] = await _secureStorage.read(key: '$_apiKeyPrefix$id');
     }
-
-    // 导入 API Key 到 SecureStorage
-    final apiKeys = backup['apiKeys'] as Map<String, dynamic>?;
-    if (apiKeys != null) {
-      for (final entry in apiKeys.entries) {
+    final attemptedValues = <String>[];
+    final attemptedApiKeys = <String>[];
+    try {
+      for (final entry in plan.values.entries) {
+        // setter 即使抛错/返回 false，也可能已改内存或落盘，必须包含在恢复中。
+        attemptedValues.add(entry.key);
+        await _writePreference(prefs, entry.key, entry.value);
+      }
+      for (final entry in plan.apiKeys.entries) {
+        attemptedApiKeys.add(entry.key);
         await _secureStorage.write(
           key: '$_apiKeyPrefix${entry.key}',
-          value: entry.value as String,
+          value: entry.value,
         );
       }
+    } catch (error) {
+      final rollbackErrors = <Object>[];
+      for (final id in attemptedApiKeys.reversed) {
+        try {
+          final oldValue = previousApiKeys[id];
+          if (oldValue == null) {
+            await _secureStorage.delete(key: '$_apiKeyPrefix$id');
+          } else {
+            await _secureStorage.write(
+              key: '$_apiKeyPrefix$id',
+              value: oldValue,
+            );
+          }
+        } catch (rollbackError) {
+          rollbackErrors.add(rollbackError);
+        }
+      }
+      for (final key in attemptedValues.reversed) {
+        try {
+          await _writePreference(prefs, key, previousValues[key]);
+        } catch (rollbackError) {
+          rollbackErrors.add(rollbackError);
+        }
+      }
+      if (rollbackErrors.isNotEmpty) {
+        throw BackupRollbackException(error, rollbackErrors);
+      }
+      rethrow;
     }
+  }
+
+  static ({Map<String, Object> values, Map<String, String> apiKeys})
+  _validateBackup(Map<String, dynamic> backup) {
+    if (backup['version'] != 1 && backup['version'] != 2) {
+      throw const FormatException('不支持的备份版本');
+    }
+    final data = backup['data'];
+    if (data is! Map<String, dynamic>) {
+      throw const FormatException('备份缺少有效的 data 字段');
+    }
+    final values = <String, Object>{};
+    for (final entry in data.entries) {
+      if (!_shouldBackup(entry.key)) continue;
+      final item = entry.value;
+      if (item is! Map<String, dynamic>) {
+        throw FormatException('备份配置格式无效：${entry.key}');
+      }
+      final value = item['value'];
+      final Object normalized;
+      switch (item['type']) {
+        case 'bool' when value is bool:
+          normalized = value;
+        case 'int' when value is int:
+          normalized = value;
+        case 'double' when value is num && value.toDouble().isFinite:
+          normalized = value.toDouble();
+        case 'String' when value is String:
+          normalized = value;
+        case 'StringList' when value is List && value.every((v) => v is String):
+          normalized = List<String>.from(value);
+        default:
+          throw FormatException('备份配置类型或值无效：${entry.key}');
+      }
+      if (entry.key == 'profile_stats_config' && normalized is! String) {
+        throw const FormatException('统计卡片配置必须是字符串');
+      }
+      values[entry.key] = normalized;
+    }
+    final rawApiKeys = backup['apiKeys'];
+    final apiKeys = <String, String>{};
+    if (rawApiKeys != null) {
+      if (rawApiKeys is! Map<String, dynamic>) {
+        throw const FormatException('备份 API Key 格式无效');
+      }
+      for (final entry in rawApiKeys.entries) {
+        if (entry.key.isEmpty || entry.value is! String) {
+          throw const FormatException('备份 API Key 格式无效');
+        }
+        apiKeys[entry.key] = entry.value as String;
+      }
+    }
+    return (values: values, apiKeys: apiKeys);
+  }
+
+  static Future<void> _writePreference(
+    SharedPreferences prefs,
+    String key,
+    Object? value,
+  ) async {
+    final success = switch (value) {
+      null => await prefs.remove(key),
+      bool v => await prefs.setBool(key, v),
+      int v => await prefs.setInt(key, v),
+      double v => await prefs.setDouble(key, v),
+      String v => await prefs.setString(key, v),
+      List<String> v => await prefs.setStringList(key, v),
+      _ => throw FormatException('不支持的配置类型：$key'),
+    };
+    if (!success) throw StateError('配置写入失败：$key');
   }
 
   /// 从文件路径读取并解析备份数据
   static Future<Map<String, dynamic>> parseBackupFile(String filePath) async {
     final file = File(filePath);
     final content = await file.readAsString();
-    final json = jsonDecode(content) as Map<String, dynamic>;
-
-    // 基本校验(v1 / v2 结构相同,均可导入)
-    if (json['version'] == null || json['data'] == null) {
-      throw FormatException(S.current.backup_invalidFormat);
+    final json = jsonDecode(content);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('备份格式无效');
     }
-
+    _validateBackup(json);
     return json;
   }
 
   /// 测试钩子:暴露备份判定(仅测试用)。
   static bool debugShouldBackup(String key) => _shouldBackup(key);
+}
+
+/// 底层存储持续失败时无法保证跨存储恢复，明确报告并保留原错误供诊断。
+class BackupRollbackException implements Exception {
+  BackupRollbackException(this.cause, this.rollbackErrors);
+
+  final Object cause;
+  final List<Object> rollbackErrors;
+
+  @override
+  String toString() => '备份导入失败，${rollbackErrors.length} 项数据恢复失败，请重试恢复备份';
 }

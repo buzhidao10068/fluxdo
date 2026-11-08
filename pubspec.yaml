@@ -222,6 +222,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   melos: ^7.5.1
   dart_console: ^4.1.4
+  shared_preferences_platform_interface: ^2.4.2 # 备份恢复的平台写入故障回归测试
   xml: ^6.6.1 # Android Manifest 站点身份与深链配置回归测试
 
 melos:

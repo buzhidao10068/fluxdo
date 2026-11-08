@@ -13,10 +13,6 @@ enum ProfileStatType {
   recentTimeRead,
   bookmarkCount,
   topicsEntered,
-  // connect.linux.do 独有字段
-  topicsRepliedTo,
-  likesReceivedDays,
-  likesReceivedUsers,
 }
 
 /// 布局模式
@@ -24,8 +20,7 @@ enum StatsLayoutMode { grid, scroll }
 
 /// 数据源
 enum StatsDataSource {
-  summary,   // 全量（Summary API）
-  connect,   // 信任等级周期（connect.linux.do）
+  summary, // 全量（Summary API）
 }
 
 /// 各数据源支持的统计项
@@ -41,16 +36,6 @@ const Map<StatsDataSource, Set<ProfileStatType>> supportedStatsPerSource = {
     ProfileStatType.recentTimeRead,
     ProfileStatType.bookmarkCount,
     ProfileStatType.topicsEntered,
-  },
-  StatsDataSource.connect: {
-    ProfileStatType.daysVisited,
-    ProfileStatType.postsReadCount,
-    ProfileStatType.likesReceived,
-    ProfileStatType.likesGiven,
-    ProfileStatType.topicsEntered,
-    ProfileStatType.topicsRepliedTo,
-    ProfileStatType.likesReceivedDays,
-    ProfileStatType.likesReceivedUsers,
   },
 };
 
@@ -100,27 +85,35 @@ class ProfileStatsConfig {
   };
 
   factory ProfileStatsConfig.fromJson(Map<String, dynamic> json) {
+    final savedStats = json['enabledStats'];
+    final statsByName = {
+      for (final stat in ProfileStatType.values) stat.name: stat,
+    };
+    final enabledStats = savedStats is List
+        ? savedStats
+              .map((name) => statsByName[name])
+              .whereType<ProfileStatType>()
+              .toSet()
+              .toList()
+        : const ProfileStatsConfig().enabledStats;
+    // 旧 Connect 配置只保留 Summary 支持的项目；不能把每个未知项都替换成
+    // daysVisited，否则会出现重复卡片。全部项目失效时恢复默认，主动清空则保留。
+    final restoreDefaults =
+        savedStats is List && savedStats.isNotEmpty && enabledStats.isEmpty;
+    final savedColumns = json['columnsPerRow'];
     return ProfileStatsConfig(
-      enabledStats: (json['enabledStats'] as List<dynamic>?)
-          ?.map((e) => ProfileStatType.values.firstWhere(
-                (v) => v.name == e,
-                orElse: () => ProfileStatType.daysVisited,
-              ))
-          .toList() ?? const [
-        ProfileStatType.daysVisited,
-        ProfileStatType.postsReadCount,
-        ProfileStatType.likesReceived,
-        ProfileStatType.postCount,
-      ],
+      enabledStats: restoreDefaults
+          ? const ProfileStatsConfig().enabledStats
+          : enabledStats,
       layoutMode: StatsLayoutMode.values.firstWhere(
         (v) => v.name == json['layoutMode'],
         orElse: () => StatsLayoutMode.grid,
       ),
-      columnsPerRow: json['columnsPerRow'] as int? ?? 4,
-      dataSource: StatsDataSource.values.firstWhere(
-        (v) => v.name == json['dataSource'],
-        orElse: () => StatsDataSource.summary,
-      ),
+      columnsPerRow:
+          savedColumns is int && savedColumns >= 2 && savedColumns <= 4
+          ? savedColumns
+          : 4,
+      dataSource: StatsDataSource.summary,
     );
   }
 

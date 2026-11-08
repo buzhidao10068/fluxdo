@@ -4,17 +4,20 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+
 import 'dart:async';
+
 import '../../../../../l10n/s.dart';
 import '../../../../../models/topic.dart';
-import '../../../../../modules/ldc_reward/ldc_reward.dart';
 import '../../../../../providers/discourse_providers.dart';
 import '../../../../../providers/ai_translation_provider.dart';
 import '../../../../../providers/preferences_provider.dart';
 import '../../../../../utils/blocked_user_filter.dart';
 import '../../../../../utils/share_utils.dart';
 import '../../../../../utils/frame_jank_monitor.dart';
+
 import 'package:dio/dio.dart';
+
 import '../../../../../services/app_error_handler.dart';
 import '../../../../../services/discourse/discourse_service.dart';
 import '../../../../../services/log/bookmark_edit_trace.dart';
@@ -195,9 +198,7 @@ class _PostFooterSectionState extends ConsumerState<PostFooterSection> {
   /// 无活跃实例时静默跳过,footer 本地 state 仍保证当场显示)。
   /// 弹幕层/action bar 读的是 provider 的 post.boosts —— 此前只写本地
   /// state,弹幕模式下自己刚发的 boost 直接不可见。
-  void _syncBoostToProvider(
-    void Function(TopicDetailNotifier notifier) apply,
-  ) {
+  void _syncBoostToProvider(void Function(TopicDetailNotifier notifier) apply) {
     final params = TopicDetailNotifier.activeParamsFor(widget.topicId);
     if (params == null) return;
     try {

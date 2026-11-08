@@ -971,7 +971,7 @@ class _MainPageState extends ConsumerState<MainPage>
   // 下标会漂移指向错误页面（曾表现为退出/重新登录后底栏跳到第二个）。
   String _currentEntryId = NavEntryIds.home;
   ProviderSubscription<AsyncValue<String>>? _authErrorSub;
-  ProviderSubscription<AsyncValue<void>>? _authStateSub;
+  ProviderSubscription<AsyncValue<int>>? _authStateSub;
   ProviderSubscription<AsyncValue<User?>>? _currentUserSub;
   ProviderSubscription<void>? _messageBusSub;
   ProviderSubscription<void>? _notificationChannelSub;
@@ -1059,7 +1059,7 @@ class _MainPageState extends ConsumerState<MainPage>
     // 窗口内,届时 containerOf(context) 会抛错把刷新链掐死(登录后无
     // 登录态)。container 与根 ProviderScope 同生命周期,不受元素影响。
     final appContainer = ProviderScope.containerOf(context, listen: false);
-    _authStateSub = ref.listenManual<AsyncValue<void>>(authStateProvider, (
+    _authStateSub = ref.listenManual<AsyncValue<int>>(authStateProvider, (
       _,
       next,
     ) {

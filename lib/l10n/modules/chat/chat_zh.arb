@@ -225,5 +225,6 @@
         "type": "int"
       }
     }
-  }
+  },
+  "chat_thread": "线程"
 }

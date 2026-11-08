@@ -562,7 +562,7 @@ class SessionCookieSentinel {
 
   /// 从 host 提取 registrable domain（简化版：取最后两段）。
   ///
-  /// 不处理多级公共后缀（如 .co.uk），项目实际场景为 linux.do / connect.linux.do
+  /// 不处理多级公共后缀（如 .co.uk），当前场景为 nodeloc.com / www.nodeloc.com
   /// 这种 2 级域，简化够用。
   String? _registrableDomain(String host) {
     final parts = host.split('.');
@@ -838,7 +838,8 @@ class SessionCookieSentinel {
     final after = await _writer.countCookiesByName(url, name);
     final expectedMaxAfter = intent == SweepIntent.delete ? 0 : 1;
     final targetSatisfied =
-        after <= expectedMaxAfter || await _residualIsAcceptable(url, name, expectedMaxAfter);
+        after <= expectedMaxAfter ||
+        await _residualIsAcceptable(url, name, expectedMaxAfter);
     final status = targetSatisfied
         ? SweepStatus.nuclearReset
         : SweepStatus.failed;

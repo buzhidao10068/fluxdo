@@ -1,5 +1,7 @@
 import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/profile_stats_config.dart';
 import 'theme_provider.dart'; // sharedPreferencesProvider
 
@@ -10,16 +12,28 @@ class ProfileStatsConfigNotifier extends Notifier<ProfileStatsConfig> {
   Timer? _saveTimer;
   @override
   ProfileStatsConfig build() {
+    ref.onDispose(() => _saveTimer?.cancel());
     final prefs = ref.watch(sharedPreferencesProvider);
-    final jsonStr = prefs.getString(_configKey);
-    if (jsonStr != null) {
+    final stored = prefs.get(_configKey);
+    if (stored is String) {
       try {
-        return ProfileStatsConfig.fromJsonString(jsonStr);
+        final jsonStr = stored;
+        final config = ProfileStatsConfig.fromJsonString(jsonStr);
+        final normalized = config.toJsonString();
+        if (jsonStr != normalized) {
+          unawaited(prefs.setString(_configKey, normalized));
+        }
+        return config;
       } catch (_) {
         // 配置损坏，使用默认值
       }
     }
-    return const ProfileStatsConfig();
+    const defaults = ProfileStatsConfig();
+    if (stored != null) {
+      // 连底层类型也可能来自旧备份或损坏存储，修复后下次启动可正常读取。
+      unawaited(prefs.setString(_configKey, defaults.toJsonString()));
+    }
+    return defaults;
   }
 
   void update(ProfileStatsConfig config) {
@@ -40,10 +54,7 @@ class ProfileStatsConfigNotifier extends Notifier<ProfileStatsConfig> {
     final compatible = state.enabledStats
         .where((s) => isStatCompatible(s, source))
         .toList();
-    update(state.copyWith(
-      dataSource: source,
-      enabledStats: compatible,
-    ));
+    update(state.copyWith(dataSource: source, enabledStats: compatible));
   }
 
   void setEnabledStats(List<ProfileStatType> stats) {
@@ -52,16 +63,16 @@ class ProfileStatsConfigNotifier extends Notifier<ProfileStatsConfig> {
 
   void addStat(ProfileStatType stat) {
     if (!state.enabledStats.contains(stat)) {
-      update(state.copyWith(
-        enabledStats: [...state.enabledStats, stat],
-      ));
+      update(state.copyWith(enabledStats: [...state.enabledStats, stat]));
     }
   }
 
   void removeStat(ProfileStatType stat) {
-    update(state.copyWith(
-      enabledStats: state.enabledStats.where((s) => s != stat).toList(),
-    ));
+    update(
+      state.copyWith(
+        enabledStats: state.enabledStats.where((s) => s != stat).toList(),
+      ),
+    );
   }
 
   void reorderStats(int oldIndex, int newIndex) {
@@ -84,5 +95,5 @@ class ProfileStatsConfigNotifier extends Notifier<ProfileStatsConfig> {
 
 final profileStatsConfigProvider =
     NotifierProvider<ProfileStatsConfigNotifier, ProfileStatsConfig>(
-  ProfileStatsConfigNotifier.new,
-);
+      ProfileStatsConfigNotifier.new,
+    );

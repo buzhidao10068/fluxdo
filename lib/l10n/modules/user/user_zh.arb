@@ -16,7 +16,7 @@
   "profileStats_daysVisited": "访问天数",
   "profileStats_editTitle": "统计卡片自定义",
   "profileStats_enabledItems": "已添加项目",
-  "profileStats_guideMessage": "点击统计卡片可自定义展示项目、布局和数据源",
+  "profileStats_guideMessage": "点击统计卡片可自定义展示项目和布局",
   "profileStats_incompatibleSource": "不兼容当前数据源",
   "profileStats_layoutGrid": "网格",
   "profileStats_layoutMode": "布局模式",
@@ -24,15 +24,12 @@
   "profileStats_layoutSettings": "布局设置",
   "profileStats_likesGiven": "送赞",
   "profileStats_likesReceived": "获赞",
-  "profileStats_likesReceivedDays": "获赞天数",
-  "profileStats_likesReceivedUsers": "获赞人数",
-  "profileStats_loadError": "数据加载失败，已回退到全量统计",
+  "profileStats_loadError": "统计数据加载失败，请稍后重试",
   "profileStats_noItemsSelected": "未选择任何统计项",
   "profileStats_postCount": "发帖数",
   "profileStats_postsRead": "已读帖子",
   "profileStats_recentTimeRead": "近60天阅读",
   "profileStats_selectItems": "统计项目",
-  "profileStats_sourceConnect": "信任等级周期",
   "profileStats_sourceDaily": "本日",
   "profileStats_sourceMonthly": "本月",
   "profileStats_sourceQuarterly": "本季",
@@ -42,18 +39,15 @@
   "profileStats_timeRead": "阅读时间",
   "profileStats_topicCount": "主题数",
   "profileStats_topicsEntered": "浏览主题",
-  "profileStats_topicsRepliedTo": "回复主题",
   "profile_aboutFluxDO": "关于 FluxDO",
   "profile_aiModelService": "AI 模型服务",
   "profile_appearance": "外观设置",
   "profile_browsingHistory": "浏览历史",
-  "profile_cdkReauthSuccess": "CDK 重新授权成功",
   "profile_confirmLogout": "确认退出",
   "profile_dataManagement": "数据管理",
   "profile_daysVisited": "访问天数",
   "profile_editProfile": "编辑资料",
   "profile_inviteLinks": "邀请链接",
-  "profile_ldcReauthSuccess": "LDC 重新授权成功",
   "profile_likesReceived": "获得点赞",
   "profile_loadingData": "加载数据...",
   "profile_loggingOut": "正在退出...",
@@ -61,7 +55,6 @@
   "profile_loginLinuxDo": "登录 LINUX.DO",
   "profile_logoutContent": "确定要退出登录吗？",
   "profile_logoutCurrentAccount": "退出当前账号",
-  "profile_metaverse": "元宇宙",
   "profile_privateMessages": "私信",
   "profile_myBadges": "我的徽章",
   "profile_myBookmarks": "我的书签",
@@ -74,29 +67,6 @@
   "profile_postsRead": "阅读帖子",
   "profile_preferences": "功能设置",
   "profile_settings": "应用设置",
-  "profile_trustRequirements": "信任要求",
-  "trustLevel_activity": "活跃程度",
-  "trustLevel_appBarTitle": "信任要求",
-  "trustLevel_compliance": "合规记录",
-  "trustLevel_interaction": "互动参与",
-  "trustLevel_parseFailed": "解析失败: {error}",
-  "@trustLevel_parseFailed": {
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
-  },
-  "trustLevel_parseNotFound": "未找到信任级别信息 (div.card)",
-  "trustLevel_requestFailed": "请求失败: {statusCode}",
-  "@trustLevel_requestFailed": {
-    "placeholders": {
-      "statusCode": {
-        "type": "int"
-      }
-    }
-  },
-  "trustLevel_title": "信任级别要求",
   "userProfile_actionCreatedTopic": "发布了话题",
   "userProfile_actionDefault": "动态",
   "userProfile_actionLike": "点赞",

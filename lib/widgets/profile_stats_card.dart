@@ -1,15 +1,16 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/profile_stats_config.dart';
 import '../models/user.dart';
-import '../models/connect_stats.dart';
 import '../providers/core_providers.dart';
-import '../providers/directory_providers.dart';
 import '../providers/profile_stats_provider.dart';
 import '../utils/number_utils.dart';
 import '../l10n/s.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 /// 统计卡片渲染组件（个人页使用）
@@ -60,10 +61,7 @@ class ProfileStatsCard extends ConsumerWidget {
 
     return KeyedSubtree(
       key: statsCardKey,
-      child: _StatsCardContent(
-        config: config,
-        onEdit: onEdit,
-      ),
+      child: _StatsCardContent(config: config, onEdit: onEdit),
     );
   }
 }
@@ -93,7 +91,9 @@ class ProfileStatsCardPreview extends StatelessWidget {
       return SizedBox(
         width: double.infinity,
         child: Card(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(16),
@@ -140,7 +140,8 @@ class ProfileStatsCardPreview extends StatelessWidget {
         value: _formatValue(stat, value),
         label: getStatLabel(stat),
         rawValue: value,
-        isTimeValue: stat == ProfileStatType.timeRead ||
+        isTimeValue:
+            stat == ProfileStatType.timeRead ||
             stat == ProfileStatType.recentTimeRead,
       );
     }).toList();
@@ -166,11 +167,13 @@ class ProfileStatsCardPreview extends StatelessWidget {
           Row(
             children: [
               for (int c = 0; c < rows[r].length; c++)
-                Expanded(child: _wrapDraggable(
-                  context,
-                  rows[r][c],
-                  _buildStatItem(Theme.of(context), rows[r][c]),
-                )),
+                Expanded(
+                  child: _wrapDraggable(
+                    context,
+                    rows[r][c],
+                    _buildStatItem(Theme.of(context), rows[r][c]),
+                  ),
+                ),
               for (int c = rows[r].length; c < columns; c++)
                 const Expanded(child: SizedBox()),
             ],
@@ -261,10 +264,7 @@ class _StatsCardContent extends ConsumerWidget {
   final ProfileStatsConfig config;
   final VoidCallback? onEdit;
 
-  const _StatsCardContent({
-    required this.config,
-    this.onEdit,
-  });
+  const _StatsCardContent({required this.config, this.onEdit});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -292,7 +292,8 @@ class _StatsCardContent extends ConsumerWidget {
               child: Icon(
                 Symbols.error_rounded,
                 size: 16,
-                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.6),
+                color: Theme.of(context).colorScheme.error
+                    .withValues(alpha: 0.6),
               ),
             ),
           ),
@@ -300,31 +301,14 @@ class _StatsCardContent extends ConsumerWidget {
     );
   }
 
-  /// 按需从不同数据源获取数据
+  /// 仅使用当前论坛的标准 Discourse Summary API。
   _ResolvedData _resolve(WidgetRef ref) {
-    switch (config.dataSource) {
-      case StatsDataSource.summary:
-        final state = ref.watch(userSummaryProvider);
-        return _ResolvedData(
-          values: _fromSummary(state.value),
-          isLoading: state.isLoading && !state.hasValue,
-        );
-      case StatsDataSource.connect:
-        final state = ref.watch(connectStatsProvider);
-        if (state.value != null) {
-          return _ResolvedData(values: _fromConnect(state.value!));
-        }
-        if (state.isLoading) {
-          return const _ResolvedData(isLoading: true);
-        }
-        if (state.hasError) {
-          return _ResolvedData(
-            values: _fromSummary(ref.watch(userSummaryProvider).value),
-            hasError: true,
-          );
-        }
-        return _ResolvedData(values: _fromSummary(ref.watch(userSummaryProvider).value));
-    }
+    final state = ref.watch(userSummaryProvider);
+    return _ResolvedData(
+      values: _fromSummary(state.value),
+      isLoading: state.isLoading && !state.hasValue,
+      hasError: state.hasError,
+    );
   }
 
   Map<ProfileStatType, int> _fromSummary(UserSummary? s) {
@@ -340,19 +324,6 @@ class _StatsCardContent extends ConsumerWidget {
       ProfileStatType.recentTimeRead: s.recentTimeRead,
       ProfileStatType.bookmarkCount: s.bookmarkCount,
       ProfileStatType.topicsEntered: s.topicsEntered,
-    };
-  }
-
-  Map<ProfileStatType, int> _fromConnect(ConnectStats c) {
-    return {
-      ProfileStatType.daysVisited: c.daysVisited,
-      ProfileStatType.postsReadCount: c.postsRead,
-      ProfileStatType.likesReceived: c.likesReceived,
-      ProfileStatType.likesGiven: c.likesGiven,
-      ProfileStatType.topicsEntered: c.topicsViewed,
-      ProfileStatType.topicsRepliedTo: c.topicsRepliedTo,
-      ProfileStatType.likesReceivedDays: c.likesReceivedDays,
-      ProfileStatType.likesReceivedUsers: c.likesReceivedUsers,
     };
   }
 }
@@ -410,22 +381,6 @@ String getStatLabel(ProfileStatType stat) {
       return S.current.profileStats_bookmarkCount;
     case ProfileStatType.topicsEntered:
       return S.current.profileStats_topicsEntered;
-    case ProfileStatType.topicsRepliedTo:
-      return S.current.profileStats_topicsRepliedTo;
-    case ProfileStatType.likesReceivedDays:
-      return S.current.profileStats_likesReceivedDays;
-    case ProfileStatType.likesReceivedUsers:
-      return S.current.profileStats_likesReceivedUsers;
-  }
-}
-
-/// 获取数据源的显示标签
-String getDataSourceLabel(StatsDataSource source) {
-  switch (source) {
-    case StatsDataSource.summary:
-      return S.current.profileStats_sourceSummary;
-    case StatsDataSource.connect:
-      return S.current.profileStats_sourceConnect;
   }
 }
 
@@ -470,7 +425,8 @@ class _DraggableStatItemState extends State<_DraggableStatItem> {
     final renderObj = scrollable.context.findRenderObject() as RenderBox?;
     if (renderObj == null || !renderObj.hasSize) return;
 
-    final isHorizontal = scrollable.axisDirection == AxisDirection.left ||
+    final isHorizontal =
+        scrollable.axisDirection == AxisDirection.left ||
         scrollable.axisDirection == AxisDirection.right;
 
     final viewportOrigin = renderObj.localToGlobal(Offset.zero);
@@ -478,7 +434,9 @@ class _DraggableStatItemState extends State<_DraggableStatItem> {
         ? details.globalPosition.dx
         : details.globalPosition.dy;
     final viewportStart = isHorizontal ? viewportOrigin.dx : viewportOrigin.dy;
-    final viewportSize = isHorizontal ? renderObj.size.width : renderObj.size.height;
+    final viewportSize = isHorizontal
+        ? renderObj.size.width
+        : renderObj.size.height;
     final viewportEnd = viewportStart + viewportSize;
 
     const edgeZone = 60.0;
@@ -498,8 +456,10 @@ class _DraggableStatItemState extends State<_DraggableStatItem> {
 
     _autoScrollTimer ??= Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (_scrollSpeed == 0) return;
-      final newOffset = (position.pixels + _scrollSpeed)
-          .clamp(position.minScrollExtent, position.maxScrollExtent);
+      final newOffset = (position.pixels + _scrollSpeed).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
       position.jumpTo(newOffset);
     });
   }

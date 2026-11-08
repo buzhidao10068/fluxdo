@@ -57,11 +57,15 @@ enum ReconcileStopReason {
 
   /// 网络或解析失败。
   errored,
+
+  /// 账号会话已变化，停止处理迟到的响应。
+  cancelled,
 }
 
 /// 拉单页接口。reconciler 不直接依赖 dio / 服务层。
-typedef BookmarkRawPageLoader =
-    Future<BookmarkPageParseResult> Function(int page);
+typedef BookmarkRawPageLoader = Future<BookmarkPageParseResult> Function(
+  int page,
+);
 
 /// 书签对账器：协调三种触发时机（首次 / 进页面静默 / 手动 / 下拉刷新）的
 /// 数据同步，最终结果统一写回 [BookmarksRepository]。
@@ -109,12 +113,18 @@ class BookmarksReconciler {
   ///
   /// 服务端按 `updated_at DESC` 返回；遇到整页"已知且未变"即可停止——后续
   /// 页也不会有新变化（因为它们的 updated_at 比本页还旧）。
-  Future<ReconcileReport> incrementalReconcile(String accountId) async {
+  Future<ReconcileReport> incrementalReconcile(
+    String accountId, {
+    bool Function()? isCurrent,
+  }) async {
     var page = 0;
     var upserted = 0;
     final snapshot = await _repository.snapshotById(accountId);
 
     while (true) {
+      if (isCurrent != null && !isCurrent()) {
+        return _cancelled(ReconcileMode.incremental, page, upserted);
+      }
       late final BookmarkPageParseResult result;
       try {
         result = await _fetchPage(page);
@@ -127,6 +137,9 @@ class BookmarksReconciler {
           stopReason: ReconcileStopReason.errored,
         );
       }
+      if (isCurrent != null && !isCurrent()) {
+        return _cancelled(ReconcileMode.incremental, page, upserted);
+      }
       if (result.entries.isEmpty) {
         return ReconcileReport(
           mode: ReconcileMode.incremental,
@@ -137,11 +150,13 @@ class BookmarksReconciler {
         );
       }
 
-      final changed = result.entries.where((entry) {
-        final local = snapshot[entry.bookmarkId];
-        return local == null ||
-            local != entry.updatedAt.toUtc().toIso8601String();
-      }).toList(growable: false);
+      final changed = result.entries
+          .where((entry) {
+            final local = snapshot[entry.bookmarkId];
+            return local == null ||
+                local != entry.updatedAt.toUtc().toIso8601String();
+          })
+          .toList(growable: false);
 
       if (changed.isNotEmpty) {
         await _repository.upsertEntries(accountId, changed);
@@ -165,12 +180,18 @@ class BookmarksReconciler {
   /// 完整对账：翻完所有页 + 检测远端删除。
   ///
   /// 适用于首次（本地空）、定期、手动同步三种触发时机。
-  Future<ReconcileReport> fullReconcile(String accountId) async {
+  Future<ReconcileReport> fullReconcile(
+    String accountId, {
+    bool Function()? isCurrent,
+  }) async {
     var page = 0;
     var upserted = 0;
     final remoteIds = <int>{};
 
     while (true) {
+      if (isCurrent != null && !isCurrent()) {
+        return _cancelled(ReconcileMode.full, page, upserted);
+      }
       late final BookmarkPageParseResult result;
       try {
         result = await _fetchPage(page);
@@ -184,6 +205,9 @@ class BookmarksReconciler {
           stopReason: ReconcileStopReason.errored,
         );
       }
+      if (isCurrent != null && !isCurrent()) {
+        return _cancelled(ReconcileMode.full, page, upserted);
+      }
       if (result.entries.isEmpty) {
         break;
       }
@@ -196,9 +220,15 @@ class BookmarksReconciler {
 
     // 远端没拿到的本地 id = 远端已删除。
     final localIds = await _repository.allBookmarkIds(accountId);
+    if (isCurrent != null && !isCurrent()) {
+      return _cancelled(ReconcileMode.full, page, upserted);
+    }
     final deleted = localIds.difference(remoteIds);
     if (deleted.isNotEmpty) {
       await _repository.deleteByIds(accountId, deleted);
+    }
+    if (isCurrent != null && !isCurrent()) {
+      return _cancelled(ReconcileMode.full, page, upserted);
     }
     await _markFullSyncCompleted(accountId);
     return ReconcileReport(
@@ -212,9 +242,18 @@ class BookmarksReconciler {
 
   /// 下拉刷新：仅拉第一页 upsert，不翻多页、不删除。
   /// 与"对账"在 spec 中明确解耦。
-  Future<ReconcileReport> pullToRefresh(String accountId) async {
+  Future<ReconcileReport> pullToRefresh(
+    String accountId, {
+    bool Function()? isCurrent,
+  }) async {
     try {
+      if (isCurrent != null && !isCurrent()) {
+        return _cancelled(ReconcileMode.pullToRefresh, 0, 0);
+      }
       final result = await _fetchPage(0);
+      if (isCurrent != null && !isCurrent()) {
+        return _cancelled(ReconcileMode.pullToRefresh, 0, 0);
+      }
       if (result.entries.isNotEmpty) {
         await _repository.upsertEntries(accountId, result.entries);
       }
@@ -237,6 +276,15 @@ class BookmarksReconciler {
       );
     }
   }
+
+  ReconcileReport _cancelled(ReconcileMode mode, int pages, int upserted) =>
+      ReconcileReport(
+        mode: mode,
+        upserted: upserted,
+        deleted: 0,
+        pagesFetched: pages,
+        stopReason: ReconcileStopReason.cancelled,
+      );
 
   static int get pageLimit => _bookmarksPageLimit;
 }

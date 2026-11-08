@@ -1,0 +1,6 @@
+{
+  "@@locale": "en",
+  "github_commentedOn": " commented on ",
+  "github_moreFiles": "... and {count} more files",
+  "github_viewFullCode": "View full code"
+}

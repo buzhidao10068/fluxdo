@@ -14,9 +14,5 @@
   "toast_networkDisconnected": "Network disconnected",
   "toast_networkRestored": "Network restored",
   "toast_operationFailedRetry": "Operation failed, please retry",
-  "toast_pressAgainToExit": "Press back again to exit",
-  "toast_rewardError": "Tip failed: {error}",
-  "toast_rewardFailed": "Tip failed",
-  "toast_rewardNotConfigured": "Please configure tip credentials first",
-  "toast_rewardSuccess": "Tip sent successfully!"
+  "toast_pressAgainToExit": "Press back again to exit"
 }
