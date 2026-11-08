@@ -4,13 +4,12 @@ import 'package:fluxdo/services/network/doh/ech_dns_policy.dart';
 void main() {
   test('论坛根域和子域查询公共 ECH 入口', () {
     for (final host in [
-      'linux.do',
-      'www.linux.do',
-      'a.b.linux.do',
-      'LINUX.DO.',
-      'ldstatic.com',
-      'cdn.ldstatic.com',
-      'CDN.LDSTATIC.COM.',
+      'nodeloc.com',
+      'www.nodeloc.com',
+      'a.b.nodeloc.com',
+      'NODELOC.COM.',
+      'meta.nodeloc.com',
+      'META.NODELOC.COM.',
     ]) {
       expect(
         const EchDnsPolicy().queryName(host),
@@ -23,9 +22,13 @@ void main() {
   test('其他域名、相似域名和 IP 保持原样', () {
     for (final host in [
       '',
-      'notlinux.do',
-      'linux.do.example.com',
-      'evil-ldstatic.com',
+      'notnodeloc.com',
+      'nodeloc.com.example.com',
+      'evil-nodeloc.com',
+      'linux.do',
+      'connect.linux.do',
+      'ldstatic.com',
+      'cdn.ldstatic.com',
       'challenges.cloudflare.com',
       'cloudflare-ech.com',
       'example.com.',
@@ -41,7 +44,7 @@ void main() {
     const policy = EchDnsPolicy(customDomains: ['example.com']);
     expect(policy.queryName('a.example.com'), EchDnsPolicy.cloudflareQueryName);
     final disabled = policy.copyWith(enabled: false);
-    for (final host in ['linux.do', 'cdn.ldstatic.com', 'a.example.com']) {
+    for (final host in ['nodeloc.com', 'meta.nodeloc.com', 'a.example.com']) {
       expect(disabled.queryName(host), host);
     }
     final restored = EchDnsPolicy.fromJson(disabled.toJson());
@@ -59,7 +62,7 @@ void main() {
       'custom_domains': [
         ' Example.COM. ',
         'example.com',
-        'cdn.linux.do',
+        'meta.nodeloc.com',
         'https://bad.com',
         '127.0.0.1',
         '*.bad.com',

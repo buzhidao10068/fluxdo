@@ -38,7 +38,8 @@ bool isInternalUrl(Uri uri) {
 
 /// 检查 URL 是否属于站点内部链接（字符串版本，支持相对路径）
 bool isInternalUrlString(String url) {
-  if (url.startsWith('/')) return true;
+  // //host/path 带有独立主机，必须按主机判定，不能当成站内路径。
+  if (url.startsWith('/') && !url.startsWith('//')) return true;
   final uri = Uri.tryParse(url);
   if (uri == null) return false;
   return isInternalUrl(uri);
@@ -60,45 +61,50 @@ bool _isImageLinkUrl(String url) {
   return exts.any(path.endsWith);
 }
 
-/// 打开外部链接
-///
-/// 根据用户偏好决定使用内置浏览器还是外部浏览器
-/// 如果启用了链接安全检查，会根据链接风险等级显示确认对话框
+LinkRiskLevel? _getLinkRiskLevel(String url) {
+  final config = AppConstants.siteCustomization.linkSecurityConfig;
+  if (config == null || !config.enableExitConfirmation) return null;
+  return LinkSecurity.checkUrl(url, config);
+}
+
+Future<bool> _confirmLinkRisk(
+  BuildContext context,
+  String url,
+  LinkRiskLevel? riskLevel,
+) async {
+  switch (riskLevel) {
+    case null:
+    case LinkRiskLevel.internal:
+    case LinkRiskLevel.trusted:
+      return true;
+    case LinkRiskLevel.blocked:
+      await showLinkBlockedDialog(context, url);
+      return false;
+    case LinkRiskLevel.normal:
+    case LinkRiskLevel.risky:
+    case LinkRiskLevel.dangerous:
+      return await showExternalLinkConfirmDialog(context, url, riskLevel) ==
+          true;
+  }
+}
+
+/// 打开外部链接，根据用户偏好选择浏览器，并按风险等级进行安全确认。
 Future<void> launchExternalLink(BuildContext context, String url) async {
   if (url.isEmpty) return;
-  final uri = Uri.tryParse(url);
-  if (uri == null) return;
+  if (url.startsWith('//')) url = UrlHelper.resolveUrl(url);
+  if (Uri.tryParse(url) == null) return;
 
-  // 链接安全检查
-  final config = AppConstants.siteCustomization.linkSecurityConfig;
-  if (config != null && config.enableExitConfirmation) {
-    final riskLevel = LinkSecurity.checkUrl(url, config);
-
-    switch (riskLevel) {
-      case LinkRiskLevel.internal:
-      case LinkRiskLevel.trusted:
-        // 内部或信任链接，直接打开
-        break;
-      case LinkRiskLevel.blocked:
-        // 阻止链接，显示阻止提示
-        await showLinkBlockedDialog(context, url);
-        return;
-      case LinkRiskLevel.normal:
-      case LinkRiskLevel.risky:
-      case LinkRiskLevel.dangerous:
-        // 需要确认的链接，显示确认对话框
-        final confirmed = await showExternalLinkConfirmDialog(
-          context,
-          url,
-          riskLevel,
-        );
-        if (confirmed != true) return;
-        break;
-    }
-  }
+  if (!await _confirmLinkRisk(context, url, _getLinkRiskLevel(url))) return;
 
   // 安全确认对话框关闭时，原帖子/页面可能已经被滚动回收或导航销毁。
   if (!context.mounted) return;
+  await _openExternalLink(context, url);
+}
+
+/// 仅供已经完成安全检查的入口调用，避免内容外链重复确认。
+Future<void> _openExternalLink(BuildContext context, String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
 
   final prefs = ProviderScope.containerOf(
     context,
@@ -137,6 +143,19 @@ Future<void> launchContentLink(
   if (url.startsWith('upload://')) {
     url = await DiscourseService().resolveShortUrlForLink(url) ?? url;
     // 短链解析期间列表项可能已离开缓存范围并被销毁，不能再使用旧 context。
+    if (!context.mounted) return;
+  }
+
+  if (url.startsWith('//')) url = UrlHelper.resolveUrl(url);
+
+  // 明确风险优先于所有原生快捷跳转。相对路径补齐后再分类，
+  // 但保留原始媒体路径，后续仍由图片分支处理 CDN / S3 重写。
+  final securityUrl = UrlHelper.resolveUrl(url);
+  final riskLevel = _getLinkRiskLevel(securityUrl);
+  if (riskLevel == LinkRiskLevel.blocked ||
+      riskLevel == LinkRiskLevel.dangerous ||
+      riskLevel == LinkRiskLevel.risky) {
+    if (!await _confirmLinkRisk(context, securityUrl, riskLevel)) return;
     if (!context.mounted) return;
   }
 
@@ -255,8 +274,13 @@ Future<void> launchContentLink(
     return;
   }
 
-  // 7. 外部链接 → 根据用户偏好决定
-  await launchExternalLink(context, url);
+  // 7. 普通外链在这里确认；明确风险已在入口处理，不再重复弹窗。
+  //    站点/CDN 图片仍可走上方图库分支，保持原有直开行为。
+  if (riskLevel == LinkRiskLevel.normal) {
+    if (!await _confirmLinkRisk(context, securityUrl, riskLevel)) return;
+    if (!context.mounted) return;
+  }
+  await _openExternalLink(context, url);
 }
 
 /// 强制在外部浏览器打开链接，绕过 App Links

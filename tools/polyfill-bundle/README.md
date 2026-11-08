@@ -18,6 +18,11 @@ pnpm build            # 产物直接写到 ../../assets/polyfill/compat-polyfill
 
 产物 **入仓**：开发者拉代码即可运行，不依赖本地 Node。
 
+如果只改 `src/_banner.js`，可运行 `node build.mjs --banner-only`，无需安装依赖。
+此模式校验生成标记及 IIFE 边界，仅替换顶部 banner，并输出未变的依赖 bundle
+SHA-256；修改其它源码或依赖仍须完整构建。用 `node --test test/banner.test.mjs`
+验证源码/产物同步、DOM 容错及原生脚本属性行为。
+
 ## 配置点
 
 | 想做的事 | 改哪 |

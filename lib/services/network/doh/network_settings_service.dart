@@ -22,6 +22,7 @@ import '../system_proxy_service.dart';
 import '../webview/webview_adapter_settings_service.dart';
 import '../../windows_webview_environment_service.dart';
 import 'doh_resolver.dart';
+import 'dns_warmup_hosts.dart';
 import 'ech_dns_policy.dart';
 import 'webview_mitm_policy.dart';
 
@@ -1096,9 +1097,8 @@ class NetworkSettingsService {
       if (hostOrder != 0) {
         return hostOrder;
       }
-      return _dnsCacheRecordKindOrder(
-        a.kind,
-      ).compareTo(_dnsCacheRecordKindOrder(b.kind));
+      return _dnsCacheRecordKindOrder(a.kind)
+          .compareTo(_dnsCacheRecordKindOrder(b.kind));
     });
     return records;
   }
@@ -1372,41 +1372,15 @@ class NetworkSettingsService {
 
   List<String> _collectCommonHosts() {
     final preloaded = PreloadedDataService();
-    final hosts = <String>{
-      'connect.linux.do',
-      'ping.linux.do',
-      'cdn.linux.do',
-      'credit.linux.do',
-      'cdk.linux.do',
-    };
-
-    for (final value in [
-      AppConstants.baseUrl,
-      preloaded.longPollingBaseUrl,
-      preloaded.cdnUrl,
-      preloaded.s3CdnUrl,
-      preloaded.s3BaseUrl,
-    ]) {
-      final host = _extractHost(value);
-      if (host != null) {
-        hosts.add(host);
-      }
-    }
-
-    final result = hosts.toList()..sort();
-    return result;
-  }
-
-  String? _extractHost(String? raw) {
-    if (raw == null || raw.trim().isEmpty) {
-      return null;
-    }
-    final normalized = raw.startsWith('//') ? 'https:$raw' : raw;
-    final host = Uri.tryParse(normalized)?.host.trim().toLowerCase();
-    if (host == null || host.isEmpty) {
-      return null;
-    }
-    return host;
+    return collectDnsWarmupHosts(
+      baseUrl: AppConstants.baseUrl,
+      resourceUrls: [
+        preloaded.longPollingBaseUrl,
+        preloaded.cdnUrl,
+        preloaded.s3CdnUrl,
+        preloaded.s3BaseUrl,
+      ],
+    );
   }
 
   Future<List<String>> _lookupIpViaRust(

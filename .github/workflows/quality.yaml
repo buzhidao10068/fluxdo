@@ -1,7 +1,7 @@
 name: Quality Gate
 
-# 本分支交付第 1 步 Android 站点身份与第 2 步 P3 生态清理门禁。
-# 其它平台与 P1/ECH 后续单独提交。
+# 覆盖第 1 步 Android 站点身份、第 2 步生态清理和第 3 步 P1 定制层。
+# Rust 检查只覆盖主仓 gitlink 对应的源码，原生产物交付状态见 P1 实施记录。
 #
 # 背景：原 build.yaml 只在 `v*` tag 触发，且全流程没有 flutter analyze /
 # flutter test / cargo test 步骤。历史上多次「该改而没改」的问题因此直接
@@ -14,7 +14,7 @@ name: Quality Gate
 # 本 workflow 把「改完立刻验证」变成强制项，不依赖发版时机。
 #
 # 分级说明（阻塞 / 非阻塞）：
-# - 阻塞项：本地化生成 + flutter analyze + 站点身份定向测试 + P3 生态清理测试。
+# - 阻塞项：本地化生成 + flutter analyze + 各迁移步骤定向测试 + cargo test。
 # - 非阻塞项：全量 flutter test。
 #   上游基线本身有 245 个失败（其中 test/widgets/markdown_editor/ 单独跑就有
 #   145 个真实失败，另有大量跨目录并发污染导致的失败），与站点身份无关。
@@ -62,7 +62,7 @@ jobs:
         run: dart tool/gen_l10n.dart
 
       # 门禁 1：静态检查（阻塞）。
-      # 范围刻意限定为 lib/ + 站点身份相关测试文件，原因：
+      # 范围刻意限定为 lib/ + 各迁移步骤相关测试文件，原因：
       # - devtools_extension/ 与 packages/*/example/ 有 10 个历史 error
       #   （缺 integration_test / devtools_extensions 依赖），与主工程无关；
       # - test/compat/flutter_347_test.dart 等 3 个历史 error 属上游基线。
@@ -78,6 +78,12 @@ jobs:
             test/services/clipboard_topic_link_service_test.dart \
             test/utils/url_helper_test.dart \
             test/platform/android_site_identity_test.dart \
+            test/config/sites/nodeloc_customization_test.dart \
+            test/utils/link_security_test.dart \
+            test/utils/link_launcher_test.dart \
+            test/services/network/doh/dns_warmup_hosts_test.dart \
+            test/services/network/doh/ech_dns_policy_test.dart \
+            test/pages/network_settings/ech_settings_card_test.dart \
             test/models/profile_stats_config_test.dart \
             test/providers/profile_stats_provider_test.dart \
             test/providers/account_session_reset_test.dart \
@@ -106,6 +112,7 @@ jobs:
             test/services/clipboard_topic_link_service_test.dart \
             test/utils/url_helper_test.dart \
             test/platform/android_site_identity_test.dart \
+            test/services/network/doh/ech_dns_policy_test.dart \
             test/services/network/webview/webview_adapter_settings_service_test.dart
 
       # 第 2 步 P3：旧配置迁移、移除生态入口与保留标准论坛功能。
@@ -129,7 +136,54 @@ jobs:
             test/plugins/warden_plugin_test.dart \
             test/plugins/warden_user_specific_min_length_test.dart
 
+      # 第 3 步 P1：站点样式与插件隔离、外链分类与实际点击、DNS 预热和 ECH 设置。
+      - name: flutter test (site customization)
+        run: |
+          flutter test --no-pub \
+            test/config/sites/nodeloc_customization_test.dart \
+            test/utils/link_security_test.dart \
+            test/utils/link_launcher_test.dart \
+            test/services/network/doh/dns_warmup_hosts_test.dart \
+            test/pages/network_settings/ech_settings_card_test.dart
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: node test (polyfill banner)
+        run: node --test tools/polyfill-bundle/test/banner.test.mjs
+
       # 全量测试：非阻塞，仅记录基线漂移（见文件头说明）。
       - name: flutter test (full, non-blocking)
         continue-on-error: true
         run: flutter test --no-pub
+
+  rust:
+    name: Rust (doh_proxy) 单元测试
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libssl-dev
+
+      # 保留已有检查。本 job 只验证主仓指针指向的源码；子模块修复的
+      # 远端可获取性、主仓指针更新仍需在 P1 交付时单独完成。
+      - name: cargo test (ech)
+        working-directory: core/doh_proxy
+        run: cargo test --features ech --lib
+
+      - name: cargo test (default)
+        working-directory: core/doh_proxy
+        run: cargo test --lib

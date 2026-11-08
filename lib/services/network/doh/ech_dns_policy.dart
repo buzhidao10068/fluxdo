@@ -1,9 +1,15 @@
+import '../../../constants.dart';
+
 /// 公共 ECH 入口策略；仅替换 DNS 查询名，保留真实 Host、SNI 和缓存键。
 class EchDnsPolicy {
   const EchDnsPolicy({this.enabled = true, this.customDomains = const []});
 
   static const cloudflareQueryName = 'cloudflare-ech.com';
-  static const builtinDomains = ['linux.do', 'ldstatic.com'];
+
+  /// 内置加速域：当前站点根域（NodeLoc 无独立静态 CDN，站点域即全部资源域）。
+  ///
+  /// 由 [AppConstants.siteRootDomain] 派生，换站自动生效。
+  static List<String> get builtinDomains => [AppConstants.siteRootDomain];
 
   final bool enabled;
   final List<String> customDomains;

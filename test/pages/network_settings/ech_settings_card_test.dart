@@ -119,8 +119,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('linux.do'), findsOneWidget);
-    expect(find.text('ldstatic.com'), findsOneWidget);
+    expect(find.text('nodeloc.com'), findsOneWidget);
     expect(find.byTooltip('删除'), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
@@ -144,7 +143,7 @@ void main() {
               saved = await showDialog<String>(
                 context: context,
                 builder: (_) => const EchDomainDialog(
-                  existingDomains: ['linux.do', 'example.com'],
+                  existingDomains: ['nodeloc.com', 'example.com'],
                 ),
               );
             },
@@ -159,7 +158,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await tester.pumpAndSettle();
     expect(find.textContaining('请输入有效域名'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField), 'cdn.linux.do');
+    await tester.enterText(find.byType(TextFormField), 'meta.nodeloc.com');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await tester.pumpAndSettle();
     expect(find.text('该域名已被现有规则覆盖'), findsOneWidget);
