@@ -11,6 +11,11 @@ import '../site_customization.dart';
 /// - 光晕及头衔基色、效果类型依据公开主题 CSS 和用户徽章 custom_style。
 ///   未采集到样式的头衔沿用默认显示，来源见 P1 实施记录。
 final nodelocCustomization = SiteCustomization(
+  login: const SiteLoginConfig(
+    hcaptchaSiteKey: 'd2a8ddf6-4c2a-4054-ac7c-2e288c2477aa',
+    hcaptchaCreateEndpoint: '/captcha/hcaptcha/create.json',
+    applicationName: 'NodeLoc Unofficial Client',
+  ),
   avatarGlowRules: const [
     AvatarGlowRule(primaryGroupName: 'Rich', glowColor: Color(0xFFF5BF03)),
   ],

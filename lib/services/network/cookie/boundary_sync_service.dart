@@ -106,6 +106,7 @@ class BoundarySyncService {
   /// [acceptValues] cookie 名 → 只接受的值；用于 challenge 场景按确认的 fresh 值
   ///   过滤，排除 WebView 中可能残留的旧变体。与 trusted 同用时，确认的
   ///   cf_clearance 可替换验证期间被普通同步抢先写回的副本。
+  /// [isCancelled] 使单次登录弹窗失效，不影响同代次的其他请求。
   Future<void> syncFromWebView({
     String? currentUrl,
     InAppWebViewController? controller,
@@ -115,18 +116,27 @@ class BoundarySyncService {
     int? requestGeneration,
     bool trusted = false,
     Map<String, String>? acceptValues,
-  }) => _syncLock.synchronized(
-    () => _syncFromWebView(
-      currentUrl: currentUrl,
-      controller: controller,
-      cookieNames: cookieNames,
-      excludeCookieNames: excludeCookieNames,
-      allowLowConfidenceSessionCookies: allowLowConfidenceSessionCookies,
-      requestGeneration: requestGeneration,
-      trusted: trusted,
-      acceptValues: acceptValues,
-    ),
-  );
+    bool Function()? isCancelled,
+  }) {
+    final generation = requestGeneration ?? AuthSession().generation;
+    final epoch = _jar.webViewSyncEpoch;
+    bool isCurrent() =>
+        AuthSession().isValid(generation) &&
+        epoch == _jar.webViewSyncEpoch &&
+        isCancelled?.call() != true;
+    return _syncLock.synchronized(
+      () => _syncFromWebView(
+        currentUrl: currentUrl,
+        controller: controller,
+        cookieNames: cookieNames,
+        excludeCookieNames: excludeCookieNames,
+        allowLowConfidenceSessionCookies: allowLowConfidenceSessionCookies,
+        isCurrent: isCurrent,
+        trusted: trusted,
+        acceptValues: acceptValues,
+      ),
+    );
+  }
 
   Future<void> _syncFromWebView({
     String? currentUrl,
@@ -134,7 +144,7 @@ class BoundarySyncService {
     Set<String>? cookieNames,
     Set<String>? excludeCookieNames,
     bool allowLowConfidenceSessionCookies = false,
-    int? requestGeneration,
+    required bool Function() isCurrent,
     bool trusted = false,
     Map<String, String>? acceptValues,
   }) async {
@@ -143,14 +153,7 @@ class BoundarySyncService {
     final host = uri.host;
 
     try {
-      if (requestGeneration != null &&
-          !AuthSession().isValid(requestGeneration)) {
-        debugPrint(
-          '[BoundarySync] 跳过过期会话同步: '
-          'gen=$requestGeneration current=${AuthSession().generation}',
-        );
-        return;
-      }
+      if (!isCurrent()) return;
 
       if (io.Platform.isWindows && controller != null) {
         final synced = await _jar.syncCriticalCookiesFromController(
@@ -160,6 +163,7 @@ class BoundarySyncService {
           excludeCookieNames: excludeCookieNames,
           trusted: trusted,
           acceptValues: acceptValues,
+          isCurrent: isCurrent,
           shouldSyncCookie: (name, value) => _shouldSyncCookie(
             name,
             value,
@@ -168,6 +172,7 @@ class BoundarySyncService {
             acceptValues: acceptValues,
           ),
         );
+        if (!isCurrent()) return;
         if (synced > 0) {
           final syncedDetails = await _jar.getCookieDiagnosticsForRequest(
             uri,
@@ -190,6 +195,7 @@ class BoundarySyncService {
         _jar.webViewCookieManager,
         url,
       );
+      if (!isCurrent()) return;
       final cookiesToPersist = <Cookie>[];
       final cookieGroups = <String, List<Cookie>>{};
 
@@ -261,6 +267,7 @@ class BoundarySyncService {
         )) {
           continue;
         }
+        if (!isCurrent()) return;
 
         // domain 处理：优先用平台返回值，旧 Android 兜底
         String? domain;
@@ -348,45 +355,50 @@ class BoundarySyncService {
         return;
       }
 
-      if (requestGeneration != null &&
-          !AuthSession().isValid(requestGeneration)) {
-        debugPrint(
-          '[BoundarySync] 跳过过期会话写入: '
-          'gen=$requestGeneration current=${AuthSession().generation}',
-        );
-        return;
-      }
-
-      if (!_jar.isInitialized) await _jar.initialize();
-      final jar = _jar.cookieJar;
-      if (trusted && jar is EnhancedPersistCookieJar) {
-        final remaining = [...toSave];
-        if (acceptValues?['cf_clearance'] != null) {
-          final verified = toSave
-              .where((cookie) => cookie.name == 'cf_clearance')
-              .map((cookie) => SetCookieParser.fromIoCookie(cookie, uri: uri))
-              .toList();
-          if (verified.isNotEmpty) {
-            // 旧分区副本的 expires 可能更晚。确认值落库时原子替换所有
-            // 同名变体，避免请求选优再次选中旧值；不向 WebView 回灌。
-            await jar.replaceByNameForSite(uri, 'cf_clearance', verified);
-            remaining.removeWhere((cookie) => cookie.name == 'cf_clearance');
+      final written = await _jar.writeFromWebView(() async {
+        final jar = _jar.cookieJar;
+        if (jar is EnhancedPersistCookieJar) {
+          final remaining = [...toSave];
+          if (trusted && acceptValues?['cf_clearance'] != null) {
+            final verified = toSave
+                .where((cookie) => cookie.name == 'cf_clearance')
+                .map((cookie) => SetCookieParser.fromIoCookie(cookie, uri: uri))
+                .toList();
+            if (verified.isNotEmpty) {
+              // 旧分区副本的 expires 可能更晚。确认值落库时原子替换所有
+              // 同名变体，避免请求选优再次选中旧值；不向 WebView 回灌。
+              await jar.replaceByNameForSite(
+                uri,
+                'cf_clearance',
+                verified,
+                shouldWrite: isCurrent,
+              );
+              remaining.removeWhere((cookie) => cookie.name == 'cf_clearance');
+            }
           }
+          await jar.saveFromResponseTrusted(
+            uri,
+            remaining,
+            trusted: trusted,
+            shouldWrite: isCurrent,
+          );
+        } else {
+          if (!isCurrent()) return;
+          await jar.saveFromResponse(uri, toSave);
         }
-        await jar.saveFromResponseTrusted(uri, remaining, trusted: true);
-      } else {
-        await jar.saveFromResponse(uri, toSave);
-      }
-      final authNames = toSave
-          .map((cookie) => cookie.name)
-          .where(CookieJarService.hostOnlyCookieNames.contains)
-          .toSet();
-      if (authNames.isNotEmpty) {
-        await _jar.enforceAuthCookiePolicy(
-          reason: 'boundary_sync',
-          names: authNames,
-        );
-      }
+        final authNames = toSave
+            .map((cookie) => cookie.name)
+            .where(CookieJarService.hostOnlyCookieNames.contains)
+            .toSet();
+        if (authNames.isNotEmpty) {
+          await _jar.enforceAuthCookiePolicy(
+            reason: 'boundary_sync',
+            names: authNames,
+            shouldWrite: isCurrent,
+          );
+        }
+      }, isCurrent: isCurrent);
+      if (!written) return;
       final syncedDetails = await _jar.getCookieDiagnosticsForRequest(
         uri,
         names: toSave.map((cookie) => cookie.name),

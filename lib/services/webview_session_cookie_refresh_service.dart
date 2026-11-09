@@ -168,6 +168,9 @@ class WebViewSessionCookieRefreshService {
     String reason = 'unknown',
     bool force = false,
   }) async {
+    if (!AppConstants.siteCustomization.login.requiresFingerprint) {
+      return const SessionBootstrapResult.success();
+    }
     final startedAt = DateTime.now();
     _logEnsureEvent(
       event: 'webview_session_sync_started',
@@ -509,6 +512,9 @@ class WebViewSessionCookieRefreshService {
     bool Function()? isCancelled,
     Future<void>? cancellationSignal,
   }) async {
+    if (!AppConstants.siteCustomization.login.requiresFingerprint) {
+      return const SessionBootstrapResult.success();
+    }
     if (isCancelled?.call() == true) {
       return const SessionBootstrapResult.failure(phase: 'cancelled');
     }

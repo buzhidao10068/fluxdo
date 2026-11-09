@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:synchronized/synchronized.dart';
 
 import '../../../constants.dart';
 import '../../windows_webview_environment_service.dart';
@@ -29,6 +30,25 @@ class CookieJarService {
   CookieJar? _cookieJar;
   bool _initialized = false;
   late final PlatformCookieStrategy _strategy;
+  final Lock _webViewWriteLock = Lock();
+  int _webViewSyncEpoch = 0;
+
+  /// 清理会使已发出的 WebView 快照失效，即使调用方没有传会话代次。
+  int get webViewSyncEpoch => _webViewSyncEpoch;
+
+  /// 只串行实际写入与退出清理，不持锁等待 CDP / CookieManager 读取。
+  Future<bool> writeFromWebView(
+    Future<void> Function() write, {
+    required bool Function() isCurrent,
+  }) async {
+    if (!isCurrent()) return false;
+    if (!_initialized) await initialize();
+    return _webViewWriteLock.synchronized(() async {
+      if (!isCurrent()) return false;
+      await write();
+      return isCurrent();
+    });
+  }
 
   /// Discourse 论坛登录 session(仅 _t / _forum_session)。
   /// 这些是 Discourse 内核约定的 cookie 名,
@@ -124,8 +144,10 @@ class CookieJarService {
   Future<int> enforceAuthCookiePolicy({
     String reason = 'unknown',
     Iterable<String>? names,
+    bool Function()? shouldWrite,
   }) async {
     if (!_initialized) await initialize();
+    if (shouldWrite?.call() == false) return 0;
 
     final jar = _cookieJar;
     if (jar is! EnhancedPersistCookieJar) return 0;
@@ -159,6 +181,7 @@ class CookieJarService {
             baseUri,
             name,
             const [],
+            shouldWrite: shouldWrite,
           );
           if (removed > 0) {
             changed++;
@@ -180,7 +203,7 @@ class CookieJarService {
 
         final removed = await jar.replaceByNameForSite(baseUri, name, [
           normalized,
-        ]);
+        ], shouldWrite: shouldWrite);
         changed++;
         debugPrint(
           '[CookieJar] Auth cookie policy normalized $name: '
@@ -544,22 +567,25 @@ class CookieJarService {
 
   /// 清除所有 Cookie（包括 WebView cookie store）
   Future<void> clearAll() async {
+    _webViewSyncEpoch++;
     if (!_initialized) await initialize();
 
     try {
-      // 先扫描已知域名（必须在 deleteAll 之前，否则 jar 已空扫不到）
-      final baseHost = Uri.parse(AppConstants.baseUrl).host;
-      final knownHosts = await getKnownHostsForDomain(baseHost);
+      await _webViewWriteLock.synchronized(() async {
+        // 先扫描已知域名（必须在 deleteAll 之前，否则 jar 已空扫不到）
+        final baseHost = Uri.parse(AppConstants.baseUrl).host;
+        final knownHosts = await getKnownHostsForDomain(baseHost);
 
-      await _cookieJar!.deleteAll();
+        await _cookieJar!.deleteAll();
 
-      // WebView cookie store 清理（平台策略处理差异）
-      await _strategy.clearWebViewCookies(webViewCookieManager, knownHosts);
-      for (final name in authCookieNames) {
-        await _deleteWebViewCookieVariants(name, knownHosts);
-      }
+        // WebView cookie store 清理（平台策略处理差异）
+        await _strategy.clearWebViewCookies(webViewCookieManager, knownHosts);
+        for (final name in authCookieNames) {
+          await _deleteWebViewCookieVariants(name, knownHosts);
+        }
 
-      CookieLogger.delete(name: '*', source: 'clearAll');
+        CookieLogger.delete(name: '*', source: 'clearAll');
+      });
     } catch (e) {
       debugPrint('[CookieJar] Failed to clear cookies: $e');
     }
@@ -878,9 +904,11 @@ class CookieJarService {
     Map<String, String>? acceptValues,
     bool trusted = false,
     required Future<bool> Function(String name, String value) shouldSyncCookie,
+    required bool Function() isCurrent,
   }) async {
-    if (!io.Platform.isWindows) return 0;
+    if (!io.Platform.isWindows || !isCurrent()) return 0;
     if (!_initialized) await initialize();
+    if (!isCurrent()) return 0;
 
     try {
       final uri =
@@ -890,6 +918,7 @@ class CookieJarService {
         controller,
         currentUrl: currentUrl,
       );
+      if (!isCurrent()) return 0;
       final filtered = <Map<String, dynamic>>[];
       for (final raw in rawCookies) {
         final name = raw['name']?.toString();
@@ -906,91 +935,107 @@ class CookieJarService {
         if (!await shouldSyncCookie(name, value)) {
           continue;
         }
+        if (!isCurrent()) return 0;
         filtered.add(raw);
       }
 
       if (filtered.isEmpty) return 0;
 
-      final jar = _cookieJar;
-      if (jar is EnhancedPersistCookieJar) {
-        final remaining = [...filtered];
-        if (trusted && acceptValues?['cf_clearance'] != null) {
-          final verified = filtered
-              .where((raw) => raw['name'] == 'cf_clearance')
-              .map(
-                (raw) => CdpCookieParser.parse(raw, originUrl: uri.toString()),
-              )
-              .whereType<CanonicalCookie>()
-              .toList();
-          if (verified.isNotEmpty) {
-            // 新旧值可能属于不同 CHIPS 分区，不能仅按 storageKey 更新，
-            // 否则请求选优仍可能挑中 expires 更晚的旧副本。
-            await jar.replaceByNameForSite(uri, 'cf_clearance', verified);
-            remaining.removeWhere((raw) => raw['name'] == 'cf_clearance');
+      final written = await writeFromWebView(() async {
+        final jar = _cookieJar;
+        if (jar is EnhancedPersistCookieJar) {
+          final remaining = [...filtered];
+          if (trusted && acceptValues?['cf_clearance'] != null) {
+            final verified = filtered
+                .where((raw) => raw['name'] == 'cf_clearance')
+                .map(
+                  (raw) =>
+                      CdpCookieParser.parse(raw, originUrl: uri.toString()),
+                )
+                .whereType<CanonicalCookie>()
+                .toList();
+            if (verified.isNotEmpty) {
+              // 新旧值可能属于不同 CHIPS 分区，不能仅按 storageKey 更新，
+              // 否则请求选优仍可能挑中 expires 更晚的旧副本。
+              await jar.replaceByNameForSite(
+                uri,
+                'cf_clearance',
+                verified,
+                shouldWrite: isCurrent,
+              );
+              remaining.removeWhere((raw) => raw['name'] == 'cf_clearance');
+            }
           }
+          await jar.saveFromCdpCookies(
+            uri,
+            remaining,
+            trusted: trusted,
+            shouldWrite: isCurrent,
+          );
+          final authNames = filtered
+              .map((raw) => raw['name']?.toString())
+              .whereType<String>()
+              .where(hostOnlyCookieNames.contains)
+              .toSet();
+          if (authNames.isNotEmpty) {
+            await enforceAuthCookiePolicy(
+              reason: 'windows_cdp_sync',
+              names: authNames,
+              shouldWrite: isCurrent,
+            );
+          }
+          return;
         }
-        await jar.saveFromCdpCookies(uri, remaining, trusted: trusted);
-        final authNames = filtered
-            .map((raw) => raw['name']?.toString())
-            .whereType<String>()
+
+        final toSave = <io.Cookie>[];
+        for (final raw in filtered) {
+          final name = raw['name']?.toString();
+          final value = raw['value']?.toString() ?? '';
+          if (name == null || value.isEmpty) continue;
+
+          io.Cookie cookie;
+          try {
+            cookie = io.Cookie(name, value);
+          } catch (_) {
+            cookie = io.Cookie(name, CookieValueCodec.encode(value));
+          }
+
+          final domain = raw['domain']?.toString();
+          final path = raw['path']?.toString();
+          final secure = raw['secure'] == true;
+          final httpOnly = raw['httpOnly'] == true;
+          final expires = raw['expires'];
+
+          if (domain != null && domain.trim().isNotEmpty) {
+            cookie.domain = domain;
+          }
+          cookie
+            ..path = path == null || path.isEmpty ? '/' : path
+            ..secure = secure
+            ..httpOnly = httpOnly;
+          if (expires is num && expires > 0) {
+            cookie.expires = DateTime.fromMillisecondsSinceEpoch(
+              (expires * 1000).round(),
+            );
+          }
+          toSave.add(cookie);
+        }
+
+        if (toSave.isEmpty || !isCurrent()) return;
+        await _cookieJar!.saveFromResponse(uri, toSave);
+        final authNames = toSave
+            .map((cookie) => cookie.name)
             .where(hostOnlyCookieNames.contains)
             .toSet();
         if (authNames.isNotEmpty) {
           await enforceAuthCookiePolicy(
-            reason: 'windows_cdp_sync',
+            reason: 'windows_controller_sync',
             names: authNames,
+            shouldWrite: isCurrent,
           );
         }
-        return filtered.length;
-      }
-
-      final toSave = <io.Cookie>[];
-      for (final raw in filtered) {
-        final name = raw['name']?.toString();
-        final value = raw['value']?.toString() ?? '';
-        if (name == null || value.isEmpty) continue;
-
-        io.Cookie cookie;
-        try {
-          cookie = io.Cookie(name, value);
-        } catch (_) {
-          cookie = io.Cookie(name, CookieValueCodec.encode(value));
-        }
-
-        final domain = raw['domain']?.toString();
-        final path = raw['path']?.toString();
-        final secure = raw['secure'] == true;
-        final httpOnly = raw['httpOnly'] == true;
-        final expires = raw['expires'];
-
-        if (domain != null && domain.trim().isNotEmpty) {
-          cookie.domain = domain;
-        }
-        cookie
-          ..path = path == null || path.isEmpty ? '/' : path
-          ..secure = secure
-          ..httpOnly = httpOnly;
-        if (expires is num && expires > 0) {
-          cookie.expires = DateTime.fromMillisecondsSinceEpoch(
-            (expires * 1000).round(),
-          );
-        }
-        toSave.add(cookie);
-      }
-
-      if (toSave.isEmpty) return 0;
-      await _cookieJar!.saveFromResponse(uri, toSave);
-      final authNames = toSave
-          .map((cookie) => cookie.name)
-          .where(hostOnlyCookieNames.contains)
-          .toSet();
-      if (authNames.isNotEmpty) {
-        await enforceAuthCookiePolicy(
-          reason: 'windows_controller_sync',
-          names: authNames,
-        );
-      }
-      return toSave.length;
+      }, isCurrent: isCurrent);
+      return written ? filtered.length : 0;
     } catch (e) {
       debugPrint('[CookieJar][Windows] Failed to sync live cookies: $e');
       return 0;

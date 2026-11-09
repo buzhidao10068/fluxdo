@@ -36,8 +36,9 @@ class EnhancedPersistCookieJar implements base.CookieJar {
     final cached = _cache;
     if (cached != null) return cached;
     final loaded = await _store.readAll();
-    _cache = loaded;
-    return loaded;
+    // 读盘期间清理、写入或其他冷读可能已经发布了新缓存。
+    // 迟到的磁盘快照不得覆盖它，当前读取也应使用最新缓存。
+    return _cache ??= loaded;
   }
 
   Future<void> _writeAll(List<CanonicalCookie> cookies) async {
@@ -54,14 +55,22 @@ class EnhancedPersistCookieJar implements base.CookieJar {
   ///   泛读旧值；值未变则保持。
   /// - false（WebView 泛读，可能读到旧残留）：仅当比已有值更新鲜（[isFresherThan]）
   ///   时才覆盖，避免旧值盖掉权威新值。
+  /// [shouldWrite] 在进入串行队列后和异步读盘后复查，阻止已取消的快照写回。
+  /// 已开始的持久化不会撤销，退出清理仍需排在该写入之后。
   Future<void> saveCanonicalCookies(
     Uri uri,
     List<CanonicalCookie> cookies, {
     bool trusted = false,
+    bool Function()? shouldWrite,
   }) {
     if (cookies.isEmpty) return Future.value();
     return _synchronized(
-      () => _saveCanonicalCookiesLocked(uri, cookies, trusted: trusted),
+      () => _saveCanonicalCookiesLocked(
+        uri,
+        cookies,
+        trusted: trusted,
+        shouldWrite: shouldWrite,
+      ),
     );
   }
 
@@ -69,8 +78,11 @@ class EnhancedPersistCookieJar implements base.CookieJar {
     Uri uri,
     List<CanonicalCookie> cookies, {
     required bool trusted,
+    bool Function()? shouldWrite,
   }) async {
+    if (shouldWrite?.call() == false) return;
     final all = [...await _readAll()];
+    if (shouldWrite?.call() == false) return;
     for (final cookie in cookies) {
       var resolved = cookie.copyWith(
         domain: cookie.domain ?? uri.host.toLowerCase(),
@@ -138,12 +150,18 @@ class EnhancedPersistCookieJar implements base.CookieJar {
     Uri uri,
     List<Map<String, dynamic>> rawCookies, {
     bool trusted = false,
+    bool Function()? shouldWrite,
   }) async {
     final cookies = rawCookies
         .map((e) => CdpCookieParser.parse(e, originUrl: uri.toString()))
         .whereType<CanonicalCookie>()
         .toList();
-    await saveCanonicalCookies(uri, cookies, trusted: trusted);
+    await saveCanonicalCookies(
+      uri,
+      cookies,
+      trusted: trusted,
+      shouldWrite: shouldWrite,
+    );
   }
 
   Future<List<CanonicalCookie>> loadCanonicalForRequest(Uri uri) async {
@@ -224,10 +242,16 @@ class EnhancedPersistCookieJar implements base.CookieJar {
     Uri uri,
     List<io.Cookie> cookies, {
     bool trusted = false,
+    bool Function()? shouldWrite,
   }) async {
     final canonical =
         cookies.map((e) => SetCookieParser.fromIoCookie(e, uri: uri)).toList();
-    await saveCanonicalCookies(uri, canonical, trusted: trusted);
+    await saveCanonicalCookies(
+      uri,
+      canonical,
+      trusted: trusted,
+      shouldWrite: shouldWrite,
+    );
   }
 
   @override
@@ -278,11 +302,14 @@ class EnhancedPersistCookieJar implements base.CookieJar {
   Future<int> replaceByNameForSite(
     Uri uri,
     String name,
-    List<CanonicalCookie> replacements,
-  ) {
+    List<CanonicalCookie> replacements, {
+    bool Function()? shouldWrite,
+  }) {
     return _synchronized(() async {
+      if (shouldWrite?.call() == false) return 0;
       final host = uri.host.toLowerCase();
       final all = [...await _readAll()];
+      if (shouldWrite?.call() == false) return 0;
       final before = all.length;
 
       all.removeWhere((cookie) {

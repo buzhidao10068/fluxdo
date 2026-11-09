@@ -5,11 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants.dart';
 import '../l10n/s.dart';
 import '../services/auth_session.dart';
-import '../services/cf_challenge_service.dart';
 import '../services/credential_store_service.dart';
 import '../services/discourse/discourse_service.dart';
-import '../services/network/cookie/boundary_sync_service.dart';
-import '../services/network/cookie/cookie_jar_service.dart';
 import '../services/toast_service.dart';
 import '../services/user_api_key_login_flow.dart';
 import '../utils/blur_config.dart';
@@ -18,16 +15,18 @@ import '../widgets/auth/login_form.dart';
 import '../widgets/auth/two_factor_dialog.dart';
 import '../widgets/common/ambient_background.dart';
 import '../widgets/common/floating_logo.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import 'qr_login_scan_page.dart';
 import 'webview_login_page.dart';
 
-/// linux.do 原生登录页。
+/// 站点原生登录页。
 ///
-/// 主路径走 [DiscourseService.loginWithPassword] (在 `_LoginMixin` 里),
+/// 主路径走 [showWebViewLoginDialog] 的同源 fetch,
 /// 不加载 Discourse Ember bundle, 绕开 iOS 15 的 ES2022 `static{}` 兼容问题。
 ///
-/// 流程对齐 linux.do 网页:
+/// 流程对齐 Discourse 网页:
 /// 1. 弹 hcaptcha 人机验证 (mini WebView, 只加载几 KB hcaptcha widget)
 /// 2. POST /hcaptcha/create.json 用 token 换 h_captcha_temp_id cookie
 /// 3. POST /session.json 真正登录
@@ -36,8 +35,9 @@ import 'webview_login_page.dart';
 /// 失败 / 高级场景 (OAuth / 注册 / 找回密码 / 2FA 走 backup code 等) 兜底跳
 /// [WebViewLoginPage]。
 ///
-/// linux.do 的 hcaptcha sitekey 写死, 后续可从 PreloadedDataService 动态拿。
-const String _kLinuxDoHcaptchaSiteKey = 'a776b4ac-8c4c-441e-986a-c6ee9ed8cf08';
+/// 保留已有的本地覆盖键；未配置时使用当前站点的 hCaptcha sitekey。
+const String _kHcaptchaSiteKeyPrefsKey = 'pref_hcaptcha_site_key';
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -45,8 +45,7 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage>
-    with TickerProviderStateMixin {
+class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   String? _savedUsername;
   String? _savedPassword;
   bool _credentialsLoaded = false;
@@ -94,7 +93,10 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
-    if (identical(UserApiKeyLoginFlow.instance.onFlowFinished, _onBrowserAuthFinished)) {
+    if (identical(
+      UserApiKeyLoginFlow.instance.onFlowFinished,
+      _onBrowserAuthFinished,
+    )) {
       UserApiKeyLoginFlow.instance.onFlowFinished = null;
     }
     _entryController.dispose();
@@ -139,37 +141,6 @@ class _LoginPageState extends State<LoginPage>
     }
   }
 
-  /// 确保 jar 里有 cf_clearance。没有 → 弹 fluxdo 现有的 CF 手动验证页让用户
-  /// 人机交互拿 cookie, 然后**显式 sync** 从 WebView cookie store 到 dart jar
-  /// (这步 [CfChallengeService.showManualVerify] 本身不做, sync 一般是
-  /// [CfChallengeInterceptor._syncCookiesOnce] 触发, 我们直接调 showManualVerify
-  /// 不经过 interceptor, 所以要手动 sync, 不然 jar 还是空)。
-  Future<bool> _ensureCfClearance() async {
-    final jar = CookieJarService();
-    var clearance = await jar.getCfClearance();
-    if (clearance != null && clearance.isNotEmpty) return true;
-    if (!mounted) return false;
-
-    final requestGeneration = AuthSession().generation;
-    final ok = await CfChallengeService().showManualVerify(context, true);
-    if (ok != true) return false;
-
-    // 等 1.5s 让 WV 网络栈把 Set-Cookie 写完, 然后同步 CF/验证码相关 cookie。
-    // 这里明确排除 Discourse session cookie，登录成功收口流程会单独同步它们。
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
-    for (var i = 0; i < 3; i++) {
-      await BoundarySyncService.instance.syncFromWebView(
-        cookieNames: null,
-        excludeCookieNames: CookieJarService.authCookieNames,
-        requestGeneration: requestGeneration,
-      );
-      clearance = await jar.getCfClearance();
-      if (clearance != null && clearance.isNotEmpty) return true;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    }
-    return false;
-  }
-
   /// 表单提交回调。返 true 表示走完成功路径并已 pop, false 留在表单。
   Future<bool> _handleSubmit({
     required String identifier,
@@ -177,23 +148,17 @@ class _LoginPageState extends State<LoginPage>
     required bool rememberCredentials,
   }) async {
     final service = DiscourseService();
-
-    // Step 0: jar 必须有 cf_clearance, 否则 native dio 任何请求都被 CF 当 bot
-    // 直接 403 (TLS 指纹不对). 没有就弹 CF 手动验证页让用户人机过一次。
-    if (!await _ensureCfClearance()) {
-      if (mounted) {
-        ToastService.showError('Cloudflare 验证未完成,请重试');
-      }
-      return false;
-    }
-    if (!mounted) return false;
-
-    // hcaptcha endpoint: 从 SharedPreferences 拿 (站长改 mount 时填到设置里);
-    // 没配就让 dialog 用内置 fallback 列表 (/captcha/hcaptcha/create.json →
-    // /hcaptcha/create.json)。读 prefs 直接走 SharedPreferences (不依赖
-    // riverpod, LoginPage 是普通 StatefulWidget)。
+    final requestGeneration = AuthSession().generation;
+    final loginConfig = AppConstants.siteCustomization.login;
+    // 无盾站点无需 cf_clearance；真实挑战由登录对话框按响应信号处理。
     final prefs = await SharedPreferences.getInstance();
-    final hcaptchaEndpoint = prefs.getString('pref_hcaptcha_create_endpoint');
+    final hcaptchaEndpoint =
+        prefs.getString('pref_hcaptcha_create_endpoint') ??
+        loginConfig.hcaptchaCreateEndpoint;
+    final overrideKey = prefs.getString(_kHcaptchaSiteKeyPrefsKey)?.trim();
+    final hcaptchaSiteKey = overrideKey != null && overrideKey.isNotEmpty
+        ? overrideKey
+        : loginConfig.hcaptchaSiteKey;
     if (!mounted) return false;
 
     // Step 1-3: WebView 内 JS 全流程登录 (csrf → hcaptcha/create → session)。
@@ -202,19 +167,21 @@ class _LoginPageState extends State<LoginPage>
     // 2FA 通过 onNeedSecondFactor 回调弹 TOTP, 由 dialog 内同一 WebView 重试。
     final result = await showWebViewLoginDialog(
       context,
-      siteKey: _kLinuxDoHcaptchaSiteKey,
+      siteKey: hcaptchaSiteKey,
       identifier: identifier,
       password: password,
       hcaptchaCreateEndpoint: hcaptchaEndpoint,
       onNeedSecondFactor: (need) => showTwoFactorDialog(
         context,
-        hint: need.totpEnabled
-            ? '请输入身份验证器 App 显示的 6 位验证码'
-            : '此账号需要二步验证',
-        onUseBackupCode: () => _loginWithWebView(),
+        hint: need.totpEnabled ? '请输入身份验证器 App 显示的 6 位验证码' : '此账号需要二步验证',
+        allowWebViewFallback: true,
       ),
     );
     if (!mounted) return false;
+    if (result?.status == WebViewLoginStatus.useWebView) {
+      await _loginWithWebView();
+      return false;
+    }
     if (result == null || result.status == WebViewLoginStatus.canceled) {
       return false;
     }
@@ -222,7 +189,15 @@ class _LoginPageState extends State<LoginPage>
     if (result.status == WebViewLoginStatus.success) {
       // dialog 已把会话 cookie (_t/_forum_session) 同步落 jar,
       // 这里复用收尾: AuthSession.advance → setToken → 预加载数据 → 登录广播。
-      await service.finalizeNativeLoginSuccess(identifier);
+      try {
+        await service.finalizeNativeLoginSuccess(
+          identifier,
+          requestGeneration: requestGeneration,
+        );
+      } on StateError catch (e) {
+        if (mounted) ToastService.showError(e.message);
+        return false;
+      }
       // 保存账号密码 (可选)
       if (rememberCredentials) {
         try {
@@ -251,8 +226,7 @@ class _LoginPageState extends State<LoginPage>
     final msg = switch (f.kind) {
       LoginErrorKind.invalidCredentials => '用户名或密码错误',
       LoginErrorKind.secondFactorRequired => f.message ?? '二步验证失败',
-      LoginErrorKind.notActivated =>
-        '账号未激活,请到邮箱 ${f.sentToEmail ?? ''} 完成激活',
+      LoginErrorKind.notActivated => '账号未激活,请到邮箱 ${f.sentToEmail ?? ''} 完成激活',
       LoginErrorKind.notApproved => '账号尚未通过审核',
       LoginErrorKind.passwordExpired => '密码已过期,请用浏览器登录重设密码',
       LoginErrorKind.network => f.message ?? '网络异常',
@@ -344,7 +318,10 @@ class _LoginPageState extends State<LoginPage>
                           _entry(
                             1,
                             Text(
-                              'LINUX.DO',
+                              AppConstants.siteRootDomain
+                                  .split('.')
+                                  .first
+                                  .toUpperCase(),
                               textAlign: TextAlign.center,
                               style: theme.textTheme.headlineMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
@@ -428,8 +405,9 @@ class _LoginPageState extends State<LoginPage>
                   )
                 : LoginForm(
                     onSubmit: _handleSubmit,
-                    onForgotPassword: () =>
-                        _loginWithWebView('${AppConstants.baseUrl}/password-reset'),
+                    onForgotPassword: () => _loginWithWebView(
+                      '${AppConstants.baseUrl}/password-reset',
+                    ),
                     savedUsername: _savedUsername,
                     savedPassword: _savedPassword,
                   ),
@@ -511,9 +489,8 @@ class _LoginPageState extends State<LoginPage>
 
   /// 扫码登录:跳转扫码页,成功后 pop 登录页
   Future<void> _loginWithQrScan() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const QrLoginScanPage()),
-    );
+    final result = await Navigator.of(context)
+        .push<bool>(MaterialPageRoute(builder: (_) => const QrLoginScanPage()));
     if (result == true && mounted) {
       Navigator.of(context).pop(true);
     }

@@ -30,6 +30,8 @@ class CfTestPlatform extends InAppWebViewPlatform {
     controller.partitionKey = null;
     controller.documentHtml = '';
     controller.documentComplete = true;
+    controller.scripts.clear();
+    controller.evaluateScript = null;
     webView = null;
     CfClearanceAuthority.instance
       ..debugCookieReader = null
@@ -111,6 +113,13 @@ class CfTestCookieManager extends PlatformCookieManager {
     values.removeWhere((cookie) => cookie.name == name);
     return true;
   }
+
+  @override
+  Future<bool> deleteAllCookies() async {
+    values.clear();
+    singleValue = null;
+    return true;
+  }
 }
 
 class CfTestController extends PlatformInAppWebViewController {
@@ -124,6 +133,8 @@ class CfTestController extends PlatformInAppWebViewController {
   String? partitionKey;
   String documentHtml = '';
   bool documentComplete = true;
+  final scripts = <String>[];
+  Future<dynamic> Function(String source)? evaluateScript;
 
   InAppWebViewController get wrapped =>
       InAppWebViewController.fromPlatform(platform: this);
@@ -141,6 +152,8 @@ class CfTestController extends PlatformInAppWebViewController {
     required String source,
     ContentWorld? contentWorld,
   }) async {
+    scripts.add(source);
+    if (evaluateScript != null) return evaluateScript!(source);
     if (source.contains('document.readyState')) {
       return documentComplete ? documentHtml : '';
     }

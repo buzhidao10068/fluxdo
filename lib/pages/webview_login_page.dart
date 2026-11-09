@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../constants.dart';
 import '../providers/preferences_provider.dart';
 import '../services/credential_store_service.dart';
@@ -25,7 +26,9 @@ import '../services/webview_session_cookie_refresh_service.dart';
 import '../services/windows_webview_environment_service.dart';
 import '../services/log/log_writer.dart';
 import '../services/login_ready_coordinator.dart';
+
 import 'package:common_ui/common_ui.dart';
+
 import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 
@@ -48,6 +51,10 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
   final _cookieJar = CookieJarService();
   final _credentialStore = CredentialStoreService();
   final int _flowGeneration = AuthSession().generation;
+  final int _flowCookieEpoch = CookieJarService().webViewSyncEpoch;
+  int? _loginGeneration;
+  bool _cancelled = false;
+  final _cancellation = Completer<void>();
   final Uri _baseUri = Uri.parse(AppConstants.baseUrl);
   InAppWebViewController? _controller;
   bool _isLoading = true;
@@ -65,6 +72,17 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
   /// 对话框期间用静态截图盖住 WebView，避免 BackdropFilter 对
   /// hybrid composition 实时回读造成的卡顿。
   Uint8List? _webViewSnapshot;
+
+  bool get _flowIsCurrent =>
+      mounted &&
+      !_cancelled &&
+      AuthSession().isValid(_loginGeneration ?? _flowGeneration) &&
+      _flowCookieEpoch == _cookieJar.webViewSyncEpoch;
+
+  void _invalidateFlow() {
+    _cancelled = true;
+    if (!_cancellation.isCompleted) _cancellation.complete();
+  }
 
   @override
   void initState() {
@@ -87,12 +105,22 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
 
   @override
   void dispose() {
+    _invalidateFlow();
     _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return PopScope<bool>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _invalidateFlow();
+      },
+      child: _buildPage(context),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
     final windowsWebViewEnvironment =
         WindowsWebViewEnvironmentService.instance.environment;
 
@@ -144,9 +172,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       body: Column(
         children: [
           if (_isLoading || _isCompletingLogin)
-            M3eLinearProgress(
-              value: _isCompletingLogin ? null : _progress,
-            ),
+            M3eLinearProgress(value: _isCompletingLogin ? null : _progress),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -211,7 +237,8 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                         controller.addJavaScriptHandler(
                           handlerName: 'onLoginCredentials',
                           callback: (args) {
-                            if (args.isNotEmpty &&
+                            if (_flowIsCurrent &&
+                                args.isNotEmpty &&
                                 ref.read(preferencesProvider).autoFillLogin) {
                               try {
                                 final data = args[0] as Map<String, dynamic>;
@@ -233,6 +260,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                         controller.addJavaScriptHandler(
                           handlerName: 'onFingerprintDone',
                           callback: (_) {
+                            if (!_flowIsCurrent) return null;
                             _fingerprintDone = true;
                             final c = _fingerprintCompleter;
                             if (c != null && !c.isCompleted) c.complete();
@@ -242,6 +270,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                         // 等待 cookie flush 完成再加载 URL，
                         // 确保 WebView 引擎初始化后 cookie 已就位
                         await _awaitInitialCookieFlush();
+                        if (!_flowIsCurrent) return;
                         await controller.loadUrl(
                           urlRequest: URLRequest(
                             url: WebUri(
@@ -253,32 +282,40 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                         // Android: 启用 WebAuthn/PassKey 支持
                         if (Platform.isAndroid) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            const MethodChannel(
-                              'com.fluxdo/webauthn',
-                            ).invokeMethod('enableWebAuthentication');
+                            if (!_flowIsCurrent) return;
+                            const MethodChannel('com.fluxdo/webauthn')
+                                .invokeMethod('enableWebAuthentication');
                           });
                         }
                       },
-                      onLoadStart: (controller, url) => setState(() {
-                        _isLoading = true;
-                        _url = url?.toString() ?? '';
-                        _lastHomeResponseUrl = null;
-                      }),
-                      onProgressChanged: (controller, progress) =>
-                          setState(() => _progress = progress / 100),
+                      onLoadStart: (controller, url) {
+                        if (!_flowIsCurrent) return;
+                        setState(() {
+                          _isLoading = true;
+                          _url = url?.toString() ?? '';
+                          _lastHomeResponseUrl = null;
+                        });
+                      },
+                      onProgressChanged: (controller, progress) {
+                        if (!_flowIsCurrent) return;
+                        setState(() => _progress = progress / 100);
+                      },
                       onLoadResource: (controller, resource) {
                         _handleLoadedResource(controller, resource);
                       },
                       onLoadStop: (controller, url) async {
+                        if (!_flowIsCurrent) return;
                         setState(() {
                           _isLoading = false;
                           _url = url?.toString() ?? '';
                         });
                         _recheckCount = 0;
                         await WebViewSettings.injectScrollFix(controller);
+                        if (!_flowIsCurrent) return;
                         _injectFingerprintHook(controller);
                         // 自动填充登录表单
                         await _autoFillLoginForm(controller, url);
+                        if (!_flowIsCurrent) return;
                         // 自动检测登录状态
                         await _checkLoginStatus(
                           controller,
@@ -286,7 +323,9 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                         );
                       },
                       onUpdateVisitedHistory: (controller, url, isReload) {
-                        if (!_loginHandled && isReload != true) {
+                        if (_flowIsCurrent &&
+                            !_loginHandled &&
+                            isReload != true) {
                           // SPA 路由变化时也尝试检测登录状态
                           _recheckCount = 0;
                           _checkLoginStatus(
@@ -312,9 +351,8 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
                 if (_isCompletingLogin)
                   Positioned.fill(
                     child: ColoredBox(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surface.withValues(alpha: 0.88),
+                      color: Theme.of(context).colorScheme.surface
+                          .withValues(alpha: 0.88),
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -412,6 +450,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     if (urlStr.contains('/session/email-login/')) return;
 
     final credentials = await _credentialStore.load();
+    if (!_flowIsCurrent) return;
     final hasCredentials =
         credentials.username != null &&
         credentials.username!.isNotEmpty &&
@@ -478,11 +517,13 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     InAppWebViewController controller, {
     String? currentUrl,
   }) async {
-    if (_loginHandled || _loginInProgress) return;
+    if (!_flowIsCurrent || _loginHandled || _loginInProgress) return;
     _loginInProgress = true;
+    var completed = false;
 
     try {
       final username = await _readCurrentUsername(controller);
+      if (!_flowIsCurrent) return;
       if (username == null || username.isEmpty) {
         if (_lastHomeResponseUrl != null &&
             _isHomePageUrl(_lastHomeResponseUrl)) {
@@ -492,7 +533,9 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       }
 
       currentUrl ??= (await controller.getUrl())?.toString();
+      if (!_flowIsCurrent) return;
       await _awaitInitialCookieFlush();
+      if (!_flowIsCurrent) return;
       if (mounted && !_isCompletingLogin) {
         setState(() {
           _isCompletingLogin = true;
@@ -505,12 +548,15 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         controller: controller,
         cookieNames: null,
         excludeCookieNames: CookieJarService.authCookieNames,
-        requestGeneration: _flowGeneration,
+        requestGeneration: _loginGeneration ?? _flowGeneration,
+        isCancelled: () => !_flowIsCurrent,
       );
+      if (!_flowIsCurrent) return;
       final tToken = await _readTTokenFromWebView(
         controller,
         currentUrl: currentUrl,
       );
+      if (!_flowIsCurrent) return;
       if (tToken == null || tToken.isEmpty) {
         if (mounted && _isCompletingLogin) {
           setState(() {
@@ -522,17 +568,6 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         _scheduleLoginRecheck(controller);
         return;
       }
-      if (!AuthSession().isValid(_flowGeneration)) {
-        if (mounted && _isCompletingLogin) {
-          setState(() {
-            _isCompletingLogin = false;
-            _isLoading = false;
-          });
-        }
-        debugPrint('[Login] 登录 WebView 流程已过期，跳过会话同步');
-        return;
-      }
-
       _loginHandled = true;
       final finalToken = await _finalizeLoginBeforeExit(
         controller,
@@ -540,64 +575,79 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         currentUrl: currentUrl,
         webViewToken: tToken,
       );
+      if (!_flowIsCurrent || finalToken == null) return;
+      final loginGeneration = _loginGeneration!;
       final browserSessionSynced = await _syncRuntimeCookiesBeforeLoginReady(
         controller,
         currentUrl: currentUrl,
-        requestGeneration: AuthSession().generation,
+        requestGeneration: loginGeneration,
         token: finalToken,
       );
+      if (!_flowIsCurrent) return;
       String? pageHtml;
       try {
-        pageHtml =
-            await controller.evaluateJavascript(
-                  source: 'window.__rawPreloaded || null',
-                )
-                as String?;
+        pageHtml = await controller.evaluateJavascript(
+          source: 'window.__rawPreloaded || null',
+        ) as String?;
       } catch (_) {}
+      if (!_flowIsCurrent) return;
 
       await _finalizeLoginBootstrap(
         currentUrl: currentUrl,
         token: finalToken,
         pageHtml: pageHtml,
         browserSessionSynced: browserSessionSynced,
+        requestGeneration: loginGeneration,
       );
 
-      if (mounted) {
+      if (_flowIsCurrent && mounted) {
+        completed = true;
         ToastService.showSuccess(S.current.webviewLogin_loginSuccess);
         Navigator.of(context).pop(true);
       }
     } finally {
       _loginInProgress = false;
+      if (!completed && _flowIsCurrent) {
+        _loginHandled = false;
+        setState(() {
+          _isCompletingLogin = false;
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  Future<String> _finalizeLoginBeforeExit(
+  Future<String?> _finalizeLoginBeforeExit(
     InAppWebViewController controller, {
     required String username,
     required String? currentUrl,
     required String webViewToken,
   }) async {
+    if (!_flowIsCurrent) return null;
     await _service.saveUsername(username);
+    if (!_flowIsCurrent) return null;
     await _syncCsrfFromPage(controller);
+    if (!_flowIsCurrent) return null;
 
     // 先切断旧请求，防止登录收口期间旧响应的 Set-Cookie 写入竞争
-    AuthSession().advance();
-    final loginGeneration = AuthSession().generation;
+    // 只有原流程仍有效时才能取得本次登录代次，后续不得收编其他会话。
+    final loginGeneration = AuthSession().advance();
+    _loginGeneration = loginGeneration;
 
     await _syncAuthCookiesFromWebView(
       controller,
       currentUrl: currentUrl,
       requestGeneration: loginGeneration,
     );
+    if (!_flowIsCurrent) return null;
 
     final jarToken = await _cookieJar.getTToken();
-    final finalToken = (jarToken != null && jarToken.isNotEmpty)
-        ? jarToken
-        : webViewToken;
+    if (!_flowIsCurrent) return null;
     final tokenMatch = jarToken == webViewToken;
     final jarAuthCookies = await _cookieJar.getAuthCookieDiagnosticsForRequest(
       uri: Uri.parse(AppConstants.baseUrl),
     );
+    if (!_flowIsCurrent) return null;
     LogWriter.instance.write({
       'timestamp': DateTime.now().toIso8601String(),
       'level': tokenMatch ? 'info' : 'warning',
@@ -608,7 +658,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       'username': username,
       'webViewTokenLen': webViewToken.length,
       'jarTokenLen': jarToken?.length,
-      'finalTokenLen': finalToken.length,
+      'finalTokenLen': tokenMatch ? webViewToken.length : 0,
       'tokenMatch': tokenMatch,
       'jarTokenMissing': jarToken == null || jarToken.isEmpty,
       'jarAuthCookies': jarAuthCookies,
@@ -617,10 +667,11 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       debugPrint(
         '[Login] _t 不一致! WebView=${webViewToken.length}chars, Jar=${jarToken?.length}chars',
       );
+      return null;
     }
 
-    _service.setToken(finalToken);
-    return finalToken;
+    _service.setToken(webViewToken);
+    return webViewToken;
   }
 
   Future<void> _syncAuthCookiesFromWebView(
@@ -634,6 +685,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       cookieNames: CookieJarService.authCookieNames,
       allowLowConfidenceSessionCookies: true,
       requestGeneration: requestGeneration,
+      isCancelled: () => !_flowIsCurrent,
     );
   }
 
@@ -643,6 +695,13 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     required int requestGeneration,
     required String token,
   }) async {
+    if (!_flowIsCurrent || !AuthSession().isValid(requestGeneration)) {
+      return false;
+    }
+    // NodeLoc 不依赖 fingerprint/_rt；认证 Cookie 已由上一阶段同步。
+    if (!AppConstants.siteCustomization.login.requiresFingerprint) {
+      return true;
+    }
     const fingerprintWait = Duration(milliseconds: 2500);
     const bootstrapTimeout = Duration(seconds: 8);
     final startedAt = DateTime.now();
@@ -659,7 +718,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         );
       }
 
-      if (!AuthSession().isValid(requestGeneration)) {
+      if (!_flowIsCurrent || !AuthSession().isValid(requestGeneration)) {
         _logRuntimeCookieSync(
           currentUrl: currentUrl,
           requestGeneration: requestGeneration,
@@ -681,8 +740,11 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         allowLowConfidenceSessionCookies: true,
         requestGeneration: requestGeneration,
         trusted: true,
+        isCancelled: () => !_flowIsCurrent,
       );
+      if (!_flowIsCurrent) return false;
       runtimeDetails = await _runtimeCookieDiagnostics();
+      if (!_flowIsCurrent) return false;
       var hasRuntimeCookie = _hasRuntimeCookie(runtimeDetails);
 
       if (!hasRuntimeCookie) {
@@ -694,10 +756,13 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
               reason: 'webview_login_success',
               pluginCandidates: PreloadedDataService().pluginCandidatesSync,
               timeout: bootstrapTimeout,
+              isCancelled: () => !_flowIsCurrent,
+              cancellationSignal: _cancellation.future,
             );
+        if (!_flowIsCurrent) return false;
         bootstrapOk = bootstrapResult.ok;
 
-        if (AuthSession().isValid(requestGeneration)) {
+        if (_flowIsCurrent && AuthSession().isValid(requestGeneration)) {
           await BoundarySyncService.instance.syncFromWebView(
             currentUrl: currentUrl,
             controller: controller,
@@ -705,13 +770,16 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
             allowLowConfidenceSessionCookies: true,
             requestGeneration: requestGeneration,
             trusted: true,
+            isCancelled: () => !_flowIsCurrent,
           );
+          if (!_flowIsCurrent) return false;
           runtimeDetails = await _runtimeCookieDiagnostics();
+          if (!_flowIsCurrent) return false;
           hasRuntimeCookie = _hasRuntimeCookie(runtimeDetails);
         }
       }
 
-      if (!AuthSession().isValid(requestGeneration)) {
+      if (!_flowIsCurrent || !AuthSession().isValid(requestGeneration)) {
         _logRuntimeCookieSync(
           currentUrl: currentUrl,
           requestGeneration: requestGeneration,
@@ -738,6 +806,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         reason: 'webview_login_success',
         bootstrapOk: bootstrapAttempted ? bootstrapOk : null,
       );
+      if (!_flowIsCurrent) return false;
       _logRuntimeCookieSync(
         currentUrl: currentUrl,
         requestGeneration: requestGeneration,
@@ -826,21 +895,28 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     required String token,
     String? pageHtml,
     required bool browserSessionSynced,
+    required int requestGeneration,
   }) async {
     // PreloadedDataService.refresh 底层 Dio 请求没有显式超时，极端网络下
     // 可能挂住很久；这里整段限时 8 秒，超时也要兜底广播登录成功，
     // 避免用户被永久卡在「正在同步登录状态…」界面。
     const finalizeTimeout = Duration(seconds: 8);
+    bool isCurrent() =>
+        _flowIsCurrent && AuthSession().isValid(requestGeneration);
+    if (!isCurrent()) return;
 
     var loginReadyNotified = false;
     try {
       final reusedPreloaded = await LoginReadyCoordinator(
         hydrateFromHtml: PreloadedDataService().hydrateFromHtml,
         refreshPreloadedData: () async {
+          if (!isCurrent()) return;
           debugPrint('[Login] 当前页面无可复用首页数据，回退到 HTTP refresh');
           await PreloadedDataService().refresh();
         },
         notifyLoginReady: (finalToken) {
+          // timeout 不会取消底层 Future，迟到回调仍需检查并避免重复广播。
+          if (!isCurrent() || loginReadyNotified) return;
           loginReadyNotified = true;
           _service.onLoginSuccess(
             finalToken,
@@ -848,13 +924,16 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
           );
         },
       ).finalize(token: token, pageHtml: pageHtml).timeout(finalizeTimeout);
+      if (!isCurrent()) return;
 
       final jarToken = await _cookieJar.getTToken();
+      if (!isCurrent()) return;
       final tokenMatch = jarToken == token;
       final jarAuthCookies = await _cookieJar
           .getAuthCookieDiagnosticsForRequest(
             uri: Uri.parse(AppConstants.baseUrl),
           );
+      if (!isCurrent()) return;
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
         'level': 'info',
@@ -869,6 +948,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         'jarAuthCookies': jarAuthCookies,
       });
     } on TimeoutException {
+      if (!isCurrent()) return;
       debugPrint('[Login] 登录态收尾超时（${finalizeTimeout.inSeconds}s），走兜底广播');
       LogWriter.instance.write({
         'timestamp': DateTime.now().toIso8601String(),
@@ -882,7 +962,8 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     } catch (e) {
       debugPrint('[Login] 登录态收尾失败: $e');
     } finally {
-      if (!loginReadyNotified) {
+      if (!loginReadyNotified && isCurrent()) {
+        loginReadyNotified = true;
         _service.onLoginSuccess(
           token,
           forceBrowserSessionSync: !browserSessionSynced,
@@ -935,6 +1016,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
       ''',
       );
       if (csrf != null &&
+          _flowIsCurrent &&
           csrf.toString().isNotEmpty &&
           csrf.toString() != 'null') {
         CsrfTokenService().setCsrfToken(csrf.toString());
@@ -983,8 +1065,9 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
         : Completer<void>();
     _fingerprintCompleter = completer;
     try {
-      await completer.future.timeout(timeout);
-      return true;
+      await Future.any<void>([completer.future, _cancellation.future])
+          .timeout(timeout);
+      return _flowIsCurrent && _fingerprintDone;
     } on TimeoutException {
       debugPrint('[Login] 等待指纹上报超时(${timeout.inMilliseconds}ms)，继续登录流程');
       return _fingerprintDone;
@@ -995,6 +1078,7 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     InAppWebViewController controller,
     LoadedResource resource,
   ) async {
+    if (!_flowIsCurrent) return;
     final resourceUrl = resource.url?.toString();
     if (!_isHomePageUrl(resourceUrl)) {
       return;
@@ -1030,7 +1114,9 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
     };
 
     for (final url in candidates) {
+      if (!_flowIsCurrent) return null;
       final cookies = await cookieManager.getCookies(url: WebUri(url));
+      if (!_flowIsCurrent) return null;
 
       for (final cookie in cookies) {
         if (cookie.name == '_t' && cookie.value.isNotEmpty) {
@@ -1051,13 +1137,14 @@ class _WebViewLoginPageState extends ConsumerState<WebViewLoginPage> {
   static const _recheckInterval = Duration(milliseconds: 500);
 
   void _scheduleLoginRecheck(InAppWebViewController controller) {
+    if (!_flowIsCurrent) return;
     if (_recheckCount >= _maxRechecks) {
       debugPrint('[Login] 已达最大重试次数($_maxRechecks)，停止重试');
       return;
     }
     _recheckCount++;
     Future.delayed(_recheckInterval, () {
-      if (!mounted || _loginHandled || _controller != controller) {
+      if (!_flowIsCurrent || _loginHandled || _controller != controller) {
         return;
       }
       _checkLoginStatus(controller);

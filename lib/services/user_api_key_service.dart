@@ -24,12 +24,9 @@ import 'storage/resilient_secure_storage.dart';
 /// - payload/OTP 均为 RSA PKCS1 公钥加密 + Base64(user_api_keys_controller#one_time_password)
 /// - OTP 是 Redis 一次性兑换券,10 分钟 TTL,POST 兑换即焚(session_controller#one_time_password)
 /// - 带 User-Api-Key 头的 POST 豁免 CSRF(application_controller#handle_unverified_request)
-/// - scopes 只申请 one_time_password:linux.do 的 allow_user_api_key_scopes 收窄过,
-///   不含 write,带 write 会因 allowed_scopes.superset? 失败报 generic_error。
-///   代价:one_time_password scope 的 RouteMatcher 为空,带此 key 的 User-Api-Key
-///   请求会被 ensure_allowed! 拒(仅能授权时随 create 返回一枚一次性 OTP),
-///   故 POST /user-api-key/otp 的长期自愈在 linux.do 现配置下不可用——授权登录
-///   本身不受影响。selfHeal/requestOtp 对开了 write 的站点仍有效,403 时静默降级。
+/// - scopes 只申请 one_time_password，NodeLoc 已有探测记录确认接受。
+///   此 scope 用于首次授权附带的一次性 OTP，不授权长期补发 OTP。
+///   未确认 NodeLoc 的 write 权限前，保持最小权限和兑换后撤销策略。
 /// - **用完即焚**:兑换 `_t` 与 key 存活完全解耦(session#one_time_password 只查
 ///   Redis),且零 scope key 也能自我吊销(allow? 的 is_revoke_self_request? 豁免)。
 ///   scopes 无 write 时 key 落地即纯负债(永久有效+零用途+用户 Apps 列表常驻),
@@ -53,17 +50,17 @@ class UserApiKeyService {
   static const _keyPendingNonce = 'user_api_key_pending_nonce';
 
   static const String authRedirect = 'discourse://auth_redirect';
-  static const String applicationName = 'FluxDO';
+  static String get applicationName =>
+      AppConstants.siteCustomization.login.applicationName;
   static const String scopes = 'one_time_password';
 
   /// 跨设备扫码 key 的 application_name。展示端靠它在
   /// /u/:username.json 的 user_api_keys 列表里识别自己那枚分享 key
   /// (轮询其消失 = 扫码端已登录并自我吊销)。
-  static const String qrApplicationName = '$applicationName QR Login';
+  static String get qrApplicationName => '$applicationName QR Login';
 
   /// scopes 是否含 write(决定 key 是否值得留作 _t 自愈弹药)。
-  /// linux.do 现配置只允许 one_time_password → key 兑换后即为
-  /// 零 scope 永久凭据,纯负债,应当用完即焚。
+  /// 当前仅申请一次性 OTP 权限，兑换后撤销，不假定站点支持长期自愈。
   static bool get keyWorthKeeping =>
       scopes.split(',').map((s) => s.trim()).contains('write');
 

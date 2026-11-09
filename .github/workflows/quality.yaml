@@ -1,6 +1,6 @@
 name: Quality Gate
 
-# 覆盖第 1 步 Android 站点身份、第 2 步生态清理和第 3 步 P1 定制层。
+# 覆盖 Android 站点身份、生态清理、P1 定制层和 P2 登录链路。
 # Rust 检查只覆盖主仓 gitlink 对应的源码，原生产物交付状态见 P1 实施记录。
 #
 # 背景：原 build.yaml 只在 `v*` tag 触发，且全流程没有 flutter analyze /
@@ -95,8 +95,15 @@ jobs:
             test/plugins/warden_user_specific_min_length_test.dart \
             test/widgets/nodeloc_ecosystem_test.dart \
             test/services/data_backup_service_test.dart \
+            test/services/discourse_login_test.dart \
+            test/widgets/auth/nodeloc_login_test.dart \
+            test/widgets/auth/webview_login_page_test.dart \
+            test/support/cf_test_platform.dart \
             test/services/network/cookie/app_cookie_manager_test.dart \
-            test/services/network/webview/webview_adapter_settings_service_test.dart
+            test/services/network/cookie/boundary_sync_clearance_test.dart \
+            test/services/network/webview/webview_adapter_settings_service_test.dart \
+            packages/enhanced_cookie_jar/lib \
+            packages/enhanced_cookie_jar/test
 
       # 门禁 2：站点身份定向测试（阻塞）。
       # 覆盖 baseUrl/siteHost/siteRootDomain/isSiteHost 派生、深链 host 白名单、
@@ -145,6 +152,20 @@ jobs:
             test/utils/link_launcher_test.dart \
             test/services/network/doh/dns_warmup_hosts_test.dart \
             test/pages/network_settings/ech_settings_card_test.dart
+
+      # 第 4 步 P2：验证码配置、会话凭据、2FA 交接、取消写入与真实 CF 挑战兜底。
+      - name: flutter test (NodeLoc login)
+        run: |
+          flutter test --no-pub \
+            test/services/discourse_login_test.dart \
+            test/widgets/auth/nodeloc_login_test.dart \
+            test/widgets/auth/webview_login_page_test.dart \
+            test/services/login_ready_coordinator_test.dart \
+            test/services/network/csrf_main_chain_test.dart \
+            test/services/qr_login_service_test.dart \
+            test/services/cf_challenge_guards_test.dart \
+            test/services/network/interceptors/cf_challenge_interceptor_test.dart \
+            packages/enhanced_cookie_jar/test
 
       - name: Setup Node
         uses: actions/setup-node@v4

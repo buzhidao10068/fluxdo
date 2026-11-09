@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/topic.dart';
 import '../plugins/site_plugin.dart';
 
@@ -85,8 +86,25 @@ class UserTitleStyleRule {
   });
 }
 
+/// 站点登录差异。通用站点不要求 Linux.do 的 fingerprint 会话插件。
+class SiteLoginConfig {
+  final String hcaptchaSiteKey;
+  final String? hcaptchaCreateEndpoint;
+  final String applicationName;
+  final bool requiresFingerprint;
+
+  const SiteLoginConfig({
+    this.hcaptchaSiteKey = '',
+    this.hcaptchaCreateEndpoint,
+    this.applicationName = 'FluxDO',
+    this.requiresFingerprint = false,
+  });
+}
+
 /// 站点自定义配置
 class SiteCustomization {
+  final SiteLoginConfig login;
+
   /// 头像光晕规则列表
   final List<AvatarGlowRule> avatarGlowRules;
 
@@ -103,6 +121,7 @@ class SiteCustomization {
   final List<SitePlugin> plugins;
 
   const SiteCustomization({
+    this.login = const SiteLoginConfig(),
     this.avatarGlowRules = const [],
     this.userTitleStyleRules = const [],
     this.linkSecurityConfig,

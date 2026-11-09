@@ -1,6 +1,6 @@
 part of 'discourse_service.dart';
 
-/// 原生用户名/密码登录 — linux.do 流程对齐网页:
+/// 原生用户名/密码登录，与当前站点的 Discourse 网页流程对齐:
 /// 1. (UI 层) 弹 hcaptcha mini webview, 让用户人机验证拿 hcaptcha token
 /// 2. GET /session/csrf (由 RequestHeaderInterceptor 在 POST 前自动触发)
 /// 3. POST /hcaptcha/create.json {token: hcaptchaToken}
@@ -13,24 +13,33 @@ part of 'discourse_service.dart';
 mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// 用 hcaptcha token 换 h_captcha_temp_id cookie。
   /// caller 必须先通过 hcaptcha mini webview 让用户人机交互拿到 token。
-  @Deprecated(
-    '改用 WebView 内 JS 全流程登录 (showWebViewLoginDialog); '
-    'dio GET /session/csrf 实测被 CF 当 bot 403 (TLS 指纹), 仅留兜底',
-  )
   Future<bool> verifyHcaptchaToken(String hcaptchaToken) async {
-    try {
-      await _dio.post<dynamic>(
-        '/hcaptcha/create.json',
-        data: {'token': hcaptchaToken},
-        options: Options(contentType: Headers.formUrlEncodedContentType),
-      );
-      return true;
-    } on DioException catch (e) {
-      debugPrint(
-        '[DiscourseLogin] hcaptcha verify 失败: ${e.type} ${e.response?.statusCode} ${e.message}',
-      );
-      return false;
+    final endpoints = {
+      ?AppConstants.siteCustomization.login.hcaptchaCreateEndpoint,
+      '/captcha/hcaptcha/create.json',
+      '/hcaptcha/create.json',
+    };
+    for (final endpoint in endpoints) {
+      try {
+        final response = await _dio.post<dynamic>(
+          endpoint,
+          data: {'token': hcaptchaToken},
+          options: Options(contentType: Headers.formUrlEncodedContentType),
+        );
+        if (response.statusCode == 404) continue;
+        final contentType = response.headers.value(Headers.contentTypeHeader);
+        return response.statusCode == 200 &&
+            contentType?.contains('text/html') != true &&
+            !response.data.toString().trimLeft().startsWith('<');
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) continue;
+        debugPrint(
+          '[DiscourseLogin] hcaptcha verify 失败: ${e.type} ${e.response?.statusCode}',
+        );
+        return false;
+      }
     }
+    return false;
   }
 
   /// 用户名/邮箱 + 密码登录。
@@ -39,15 +48,12 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   /// - 调用前必须先 [verifyHcaptchaToken] 让 server 写 h_captcha_temp_id cookie
   /// - 首次返 [LoginErrorKind.secondFactorRequired] 时由 caller 弹 TOTP 对话框
   ///   拿 6 位 code, 再次调本方法带 [secondFactorToken]
-  @Deprecated(
-    '改用 WebView 内 JS 全流程登录 (showWebViewLoginDialog); '
-    'dio CSRF 依赖 GET /session/csrf, 而它被 CF 403, 仅留兜底',
-  )
   Future<LoginResult> loginWithPassword({
     required String identifier,
     required String password,
     String? secondFactorToken,
   }) async {
+    final requestGeneration = AuthSession().generation;
     final data = <String, String>{'login': identifier, 'password': password};
     if (secondFactorToken != null && secondFactorToken.isNotEmpty) {
       data['second_factor_token'] = secondFactorToken;
@@ -67,34 +73,30 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
       debugPrint(
         '[DiscourseLogin] session POST 失败: ${e.type} ${e.response?.statusCode}',
       );
+      if (e.response != null) {
+        final failure = _parseSessionResponse(
+          e.response!.statusCode ?? 0,
+          e.response!.data,
+        );
+        if (failure is LoginFailure) return failure;
+      }
+      // 取消、拦截器拒绝等异常即使附带 2xx 响应也不能绕过正常收口。
       return LoginResult.error(
         LoginErrorKind.network,
         message: e.message ?? '网络异常',
       );
     }
 
-    final body = resp.data is Map
-        ? Map<String, dynamic>.from(resp.data as Map)
-        : null;
-    if (body == null) {
-      return LoginResult.error(
-        LoginErrorKind.unknown,
-        message: 'Discourse 返回非 JSON: HTTP ${resp.statusCode}',
+    final result = _parseSessionResponse(resp.statusCode ?? 0, resp.data);
+    if (result is LoginFailure) return result;
+    try {
+      await finalizeNativeLoginSuccess(
+        identifier,
+        requestGeneration: requestGeneration,
       );
+    } on StateError catch (e) {
+      return LoginResult.error(LoginErrorKind.unknown, message: e.message);
     }
-
-    // 服务端把所有失败都用 200 + {error, reason} 表达
-    final reason = body['reason']?.toString();
-    if (reason != null) return _parseLoginError(reason, body);
-    if (body['error'] != null && body['user'] == null) {
-      return LoginResult.error(
-        LoginErrorKind.unknown,
-        message: body['error']?.toString(),
-      );
-    }
-
-    // 成功路径 — 收口
-    await finalizeNativeLoginSuccess(identifier);
     return const LoginResult.success();
   }
 
@@ -149,12 +151,14 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
   ///
   /// 与 [loginWithPassword] 的响应解析逻辑一致, 但**不发 dio、不做收尾** ——
   /// 收尾由调用方在 cookie 同步落 jar 后显式调 [finalizeNativeLoginSuccess]。
-  /// Discourse 把成功/失败都用 HTTP 200 + JSON body 表达 ([status] 仅用于
-  /// 非 JSON 时的错误消息)。
-  LoginResult parseSessionJsonBody(int status, String body) {
+  /// 同时校验 HTTP 状态与 user，避免空 JSON 或错误页被视为登录成功。
+  LoginResult parseSessionJsonBody(int status, String body) =>
+      _parseSessionResponse(status, body);
+
+  LoginResult _parseSessionResponse(int status, dynamic body) {
     Map<String, dynamic>? map;
     try {
-      final decoded = jsonDecode(body);
+      final decoded = body is String ? jsonDecode(body) : body;
       if (decoded is Map) map = Map<String, dynamic>.from(decoded);
     } catch (_) {
       map = null;
@@ -166,33 +170,65 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
       );
     }
 
+    // 错误状态可以携带 Discourse 的业务错误，但绝不能收口为成功。
+    if (status < 200 || status >= 300) {
+      if (status == 400 || status == 401 || status == 403) {
+        final reason = map['reason']?.toString();
+        if (reason != null) return _parseLoginError(reason, map);
+      }
+      return LoginResult.error(
+        LoginErrorKind.network,
+        message: '登录请求失败: HTTP $status',
+      );
+    }
     final reason = map['reason']?.toString();
     if (reason != null) return _parseLoginError(reason, map);
-    if (map['error'] != null && map['user'] == null) {
+    if (map['error'] != null || map['errors'] != null) {
       return LoginResult.error(
         LoginErrorKind.unknown,
-        message: map['error']?.toString(),
+        message: (map['error'] ?? map['errors']).toString(),
+      );
+    }
+    final user = map['user'];
+    if (user is! Map ||
+        user['id'] is! num ||
+        (user['id'] as num) <= 0 ||
+        user['username'] is! String ||
+        (user['username'] as String).trim().isEmpty) {
+      return const LoginResult.error(
+        LoginErrorKind.unknown,
+        message: '登录响应缺少有效用户信息',
       );
     }
     return const LoginResult.success();
   }
 
   /// 收口对齐 webview_login_page 的 _finalizeLoginBeforeExit + _finalizeLoginBootstrap:
-  /// AuthSession.advance → 从 jar 拿 _t → saveUsername/setToken → LoginReadyCoordinator
+  /// 校验会话代次与 jar 中的 _t → AuthSession.advance → saveUsername/setToken
+  /// → LoginReadyCoordinator。
   ///
   /// WebView JS 全流程登录成功后, 由 login_page 在 dialog 已把会话 cookie
   /// syncFromWebView 落 jar 之后显式调用 (public)。dio 版 [loginWithPassword]
   /// 成功路径也复用它。
-  Future<void> finalizeNativeLoginSuccess(String identifier) async {
-    AuthSession().advance();
-
+  @override
+  Future<void> finalizeNativeLoginSuccess(
+    String identifier, {
+    int? requestGeneration,
+  }) async {
+    final generation = requestGeneration ?? AuthSession().generation;
     final token = await _cookieJar.getTToken() ?? '';
-    if (token.isEmpty) {
-      debugPrint('[DiscourseLogin] 警告: 登录成功但 jar 没拿到 _t');
+    if (!AuthSession().isValid(generation)) {
+      throw StateError('登录流程已过期，请重新登录');
     }
-
+    if (token.isEmpty) {
+      throw StateError('未读取到登录 Cookie，请使用网页登录重试');
+    }
+    final loginGeneration = AuthSession().advance();
     await saveUsername(identifier);
-    if (token.isNotEmpty) setToken(token);
+    if (!AuthSession().isValid(loginGeneration)) {
+      throw StateError('登录流程已过期，请重新登录');
+    }
+    setToken(token);
     final forceBrowserSessionSync = !WebViewSessionCookieRefreshService.instance
         .hasFreshSyncForToken(token);
 
@@ -202,6 +238,7 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
             hydrateFromHtml: PreloadedDataService().hydrateFromHtml,
             refreshPreloadedData: PreloadedDataService().refresh,
             notifyLoginReady: (t) {
+              if (!AuthSession().isValid(loginGeneration)) return;
               loginReadyNotified = true;
               onLoginSuccess(
                 t,
@@ -215,9 +252,12 @@ mixin _LoginMixin on _DiscourseServiceBase, _AuthMixin {
       debugPrint('[DiscourseLogin] PreloadedData 收尾失败/超时: $e');
     } finally {
       // 兜底广播, 避免 UI 卡在"同步登录中"
-      if (!loginReadyNotified) {
+      if (!loginReadyNotified && AuthSession().isValid(loginGeneration)) {
         onLoginSuccess(token, forceBrowserSessionSync: forceBrowserSessionSync);
       }
+    }
+    if (!AuthSession().isValid(loginGeneration)) {
+      throw StateError('登录流程已过期，请重新登录');
     }
   }
 }

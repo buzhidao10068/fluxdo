@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../site_customization.dart';
 import '../../plugins/character_counts/character_counts_plugin.dart';
 import '../../plugins/reply_cost/reply_cost_plugin.dart';
@@ -7,6 +8,11 @@ import '../../widgets/common/holographic_text.dart';
 
 /// linux.do 站点自定义配置
 final linuxdoCustomization = SiteCustomization(
+  login: const SiteLoginConfig(
+    hcaptchaSiteKey: 'a776b4ac-8c4c-441e-986a-c6ee9ed8cf08',
+    hcaptchaCreateEndpoint: '/captcha/hcaptcha/create.json',
+    requiresFingerprint: true,
+  ),
   avatarGlowRules: [
     AvatarGlowRule(
       primaryGroupName: 'g-merchant',

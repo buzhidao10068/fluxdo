@@ -1,35 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 二步验证 (TOTP) 输入对话框。返回用户输入的 6 位 code,取消返 null。
-///
-/// 用法:
-/// ```dart
-/// final code = await showTwoFactorDialog(context);
-/// if (code != null) {
-///   // 用 code 重 POST /session.json
-/// }
-/// ```
-Future<String?> showTwoFactorDialog(
+/// 验证码、取消与切换网页登录分别返回，导航由登录流程统一处理。
+enum TwoFactorAction { submitCode, useWebView }
+
+class TwoFactorResult {
+  const TwoFactorResult.code(this.code) : action = TwoFactorAction.submitCode;
+  const TwoFactorResult.useWebView()
+    : action = TwoFactorAction.useWebView,
+      code = null;
+
+  final TwoFactorAction action;
+  final String? code;
+}
+
+/// 二步验证输入对话框；取消返回 null。
+Future<TwoFactorResult?> showTwoFactorDialog(
   BuildContext context, {
   String? hint,
-  VoidCallback? onUseBackupCode,
+  bool allowWebViewFallback = false,
 }) {
-  return showDialog<String>(
+  return showDialog<TwoFactorResult>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _TwoFactorDialog(
       hint: hint,
-      onUseBackupCode: onUseBackupCode,
+      allowWebViewFallback: allowWebViewFallback,
     ),
   );
 }
 
 class _TwoFactorDialog extends StatefulWidget {
-  const _TwoFactorDialog({this.hint, this.onUseBackupCode});
+  const _TwoFactorDialog({this.hint, this.allowWebViewFallback = false});
 
   final String? hint;
-  final VoidCallback? onUseBackupCode;
+  final bool allowWebViewFallback;
 
   @override
   State<_TwoFactorDialog> createState() => _TwoFactorDialogState();
@@ -42,7 +47,9 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   @override
@@ -55,7 +62,7 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
   void _submit() {
     final code = _controller.text.trim();
     if (code.length != 6) return;
-    Navigator.of(context).pop(code);
+    Navigator.of(context).pop(TwoFactorResult.code(code));
   }
 
   @override
@@ -77,7 +84,11 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
             autofillHints: const [AutofillHints.oneTimeCode],
-            style: const TextStyle(fontSize: 24, letterSpacing: 8, fontFeatures: [FontFeature.tabularFigures()]),
+            style: const TextStyle(
+              fontSize: 24,
+              letterSpacing: 8,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(6),
@@ -91,14 +102,13 @@ class _TwoFactorDialogState extends State<_TwoFactorDialog> {
             },
             onSubmitted: (_) => _submit(),
           ),
-          if (widget.onUseBackupCode != null) ...[
+          if (widget.allowWebViewFallback) ...[
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
                 onPressed: () {
-                  Navigator.of(context).pop();
-                  widget.onUseBackupCode!();
+                  Navigator.of(context).pop(const TwoFactorResult.useWebView());
                 },
                 child: const Text('改用备用码 / 安全密钥'),
               ),
