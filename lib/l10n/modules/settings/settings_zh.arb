@@ -62,7 +62,7 @@
   "preferences_homeRefreshButton": "首页悬浮刷新按钮",
   "preferences_homeRefreshButtonDesc": "在首页创作按钮上方显示独立刷新入口",
   "preferences_clipboardTopicLinkDetection": "自动识别剪贴板话题链接",
-  "preferences_clipboardTopicLinkDetectionDesc": "回到应用时检测剪贴板中的 Linux.do 话题链接，并在底部询问是否打开",
+  "preferences_clipboardTopicLinkDetectionDesc": "回到应用时检测剪贴板中的 NodeLoc 话题链接，并在底部询问是否打开",
   "preferences_clipboardTopicLink_detected": "检测到剪贴板中的话题链接",
   "preferences_clipboardTopicLink_open": "打开",
   "preferences_topicFilterKeywords": "标题关键词过滤",
@@ -79,7 +79,7 @@
   "preferences_topicFilterWholeWord": "完整词匹配",
   "preferences_topicFilterWholeWordDesc": "开启后英文关键词不再匹配子串，如 ai 不会命中 Main thread；中文关键词无影响",
   "preferences_blockedUsernames": "本地拉黑用户",
-  "preferences_blockedUsernamesDesc": "在本机隐藏这些用户发布的话题、回复和 Boost；名单不会同步到 Linux.do",
+  "preferences_blockedUsernamesDesc": "在本机隐藏这些用户发布的话题、回复和 Boost；名单不会同步到 NodeLoc",
   "preferences_blockedUsernamesCount": "已拉黑 {count} 个用户",
   "@preferences_blockedUsernamesCount": {
     "placeholders": {

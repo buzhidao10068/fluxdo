@@ -83,7 +83,7 @@ class UpdateInfo {
 
 /// 应用更新检查服务
 class UpdateService {
-  static const String _repository = 'Lingyan000/fluxdo';
+  static const String _repository = 'buzhidao10068/fluxdo';
   static const String _apiUrl =
       'https://api.github.com/repos/$_repository/releases/latest';
   static const String _autoCheckUpdateKey = 'auto_check_update';

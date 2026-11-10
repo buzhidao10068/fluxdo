@@ -60,25 +60,20 @@ subprojects {
             }
         }
 
-        // 4. flutter_avif_android 3.1.0 同时存在 FlutterAvifPlugin.java 和 .kt
-        //    新版 Kotlin compiler 会报 Redeclaration 错误。在编译前删除多余的 Java 版。
+        // 4. flutter_avif_android 3.1.0 同时包含同名 Java/Kotlin 实现。
+        //    仅在本项目的 source set 中排除 Java 版，禁止改写全局 pub-cache。
         if (project.name == "flutter_avif_android") {
-            val patchTask = tasks.register("patchFlutterAvifPluginRedeclaration") {
-                doFirst {
-                    val javaFile = file(
-                        "src/main/java/com/teknorota/flutter_avif/FlutterAvifPlugin.java"
-                    )
-                    if (javaFile.exists()) {
-                        javaFile.delete()
-                        logger.lifecycle(
-                            "Patched flutter_avif_android: removed duplicate ${javaFile.name}"
-                        )
-                    }
-                }
-            }
-            tasks.matching { it.name.startsWith("compile") }.configureEach {
-                dependsOn(patchTask)
-            }
+            val androidExt = extensions.getByName("android")
+            val sourceSets = androidExt.javaClass.getMethod("getSourceSets")
+                .invoke(androidExt) as NamedDomainObjectContainer<*>
+            val mainSourceSet = sourceSets.getByName("main")!!
+            val javaSources = mainSourceSet.javaClass.getMethod("getJava").invoke(mainSourceSet)
+            // Kotlin 编译器也会扫描 Java 根目录，仅 exclude 不足以消除重复声明。
+            // 该插件的 java 目录仅有这一份重复实现，保留 Kotlin 版本。
+            javaSources.javaClass.getMethod("setSrcDirs", Iterable::class.java).invoke(
+                javaSources,
+                emptyList<String>(),
+            )
         }
 
         // 5. quickjs_engine 0.1.1 的 CMake 漏链 NDK liblog,bridge 源码却用

@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/app_directories.dart';
+
 import '../constants.dart';
 import 'discourse_cache_manager.dart';
 import 'network/cookie/cookie_jar_service.dart';
@@ -129,7 +131,7 @@ class MigrationService {
       name: 'RawSetCookieQueue removal migration',
       shouldRun: (prefs) async {
         try {
-          final dir = await getApplicationDocumentsDirectory();
+          final dir = await getAppDataDirectory();
           final queueFile = io.File(
             p.join(dir.path, '.cookies', 'pending_set_cookies.json'),
           );
@@ -140,7 +142,7 @@ class MigrationService {
       },
       run: () async {
         try {
-          final dir = await getApplicationDocumentsDirectory();
+          final dir = await getAppDataDirectory();
           final queueFile = io.File(
             p.join(dir.path, '.cookies', 'pending_set_cookies.json'),
           );
@@ -190,7 +192,7 @@ class MigrationService {
       name: 'Purge legacy Hive image cache index',
       shouldRun: (prefs) async {
         try {
-          final dir = await getApplicationDocumentsDirectory();
+          final dir = await getAppDataDirectory();
           final hiveDir = io.Directory(p.join(dir.path, 'hive'));
           if (!await hiveDir.exists()) return false;
           await for (final e in hiveDir.list()) {
@@ -205,7 +207,7 @@ class MigrationService {
         }
       },
       run: () async {
-        final dir = await getApplicationDocumentsDirectory();
+        final dir = await getAppDataDirectory();
         final hiveDir = io.Directory(p.join(dir.path, 'hive'));
         if (!await hiveDir.exists()) return;
         await for (final e in hiveDir.list()) {
@@ -238,7 +240,7 @@ class MigrationService {
       name: 'Purge image cache directories',
       shouldRun: (prefs) async {
         try {
-          final tempDir = await getTemporaryDirectory();
+          final tempDir = await getAppTemporaryDirectory();
           for (final key in kLegacyImageCacheKeys) {
             if (await io.Directory(p.join(tempDir.path, key)).exists()) {
               return true;
@@ -250,7 +252,7 @@ class MigrationService {
         }
       },
       run: () async {
-        final tempDir = await getTemporaryDirectory();
+        final tempDir = await getAppTemporaryDirectory();
         final supportDir = await getApplicationSupportDirectory();
         for (final key in kLegacyImageCacheKeys) {
           await _trashCacheDir(tempDir, key);
@@ -266,7 +268,7 @@ class MigrationService {
       name: 'Retire legacy emoji image cache',
       shouldRun: (prefs) async {
         try {
-          final tempDir = await getTemporaryDirectory();
+          final tempDir = await getAppTemporaryDirectory();
           if (await io.Directory(
             p.join(tempDir.path, kLegacyEmojiCacheKey),
           ).exists()) {
@@ -281,7 +283,7 @@ class MigrationService {
         }
       },
       run: () async {
-        final tempDir = await getTemporaryDirectory();
+        final tempDir = await getAppTemporaryDirectory();
         final supportDir = await getApplicationSupportDirectory();
         await _trashCacheDir(tempDir, kLegacyEmojiCacheKey);
         await _deleteCacheDb(supportDir, kLegacyEmojiCacheKey);
@@ -295,7 +297,7 @@ class MigrationService {
       name: 'Retire flutter_cache_manager image caches',
       shouldRun: (prefs) async {
         try {
-          final tempDir = await getTemporaryDirectory();
+          final tempDir = await getAppTemporaryDirectory();
           final supportDir = await getApplicationSupportDirectory();
           for (final key in kLegacyImageCacheKeys) {
             if (await io.Directory(p.join(tempDir.path, key)).exists()) {
@@ -311,7 +313,7 @@ class MigrationService {
         }
       },
       run: () async {
-        final tempDir = await getTemporaryDirectory();
+        final tempDir = await getAppTemporaryDirectory();
         final supportDir = await getApplicationSupportDirectory();
         for (final key in kLegacyImageCacheKeys) {
           await _trashCacheDir(tempDir, key);
@@ -360,7 +362,7 @@ class MigrationService {
   /// 启动路径零负担;调用方应在首帧后空闲时机 unawaited 触发。
   static Future<void> purgeTrash() async {
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final tempPath = tempDir.path;
       final deleted = await Isolate.run(() {
         var count = 0;

@@ -3,10 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:app_icons/app_icons.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../utils/app_directories.dart';
 
 import '../../services/toast_service.dart';
 import '../../utils/dialog_utils.dart';
@@ -154,7 +155,7 @@ class _ImageUploadDialogState extends State<ImageUploadDialog> {
 
     if (result != null && mounted) {
       // 保存编辑后的图片到临时文件
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final editedPath = p.join(
         tempDir.path,
         'edited_${DateTime.now().millisecondsSinceEpoch}.$_editorExtension',

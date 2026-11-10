@@ -1,13 +1,13 @@
 {
-  "name": "FluxDO Source",
-  "identifier": "com.github.lingyan000.fluxdo.AltStore",
+  "name": "FluxDO NodeLoc Source",
+  "identifier": "com.buzhidao10068.fluxdo.AltStore",
   "apps": [
     {
       "name": "FluxDO",
-      "bundleIdentifier": "com.github.lingyan000.fluxdo",
-      "developerName": "lingyan000",
-      "localizedDescription": "A third-party client for LINUX DO community.",
-      "iconURL": "https://lingyan000.github.io/fluxdo/icon.png",
+      "bundleIdentifier": "com.buzhidao10068.fluxdo",
+      "developerName": "buzhidao10068",
+      "localizedDescription": "An unofficial NodeLoc client based on FluxDO, distributed independently of the upstream project.",
+      "iconURL": "https://raw.githubusercontent.com/buzhidao10068/fluxdo/gh-pages/icon.png",
       "versions": []
     }
   ]

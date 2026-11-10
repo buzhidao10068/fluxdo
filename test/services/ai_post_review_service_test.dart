@@ -106,6 +106,11 @@ void main() {
     test('提示词明确禁止完整改写', () {
       final prompt = AiPostReviewService.buildSystemPrompt('社区准则');
 
+      expect(
+        AiPostReviewService.guidelinesUrl,
+        'https://www.nodeloc.com/guidelines',
+      );
+      expect(prompt, contains('你是 NodeLoc 社区发帖前的本地 AI 审核助手'));
       expect(prompt, contains('不得提供完整改写内容'));
       expect(prompt, contains('不得输出可直接复制发布的完整帖子'));
       expect(prompt, contains('只能给方向'));
@@ -148,8 +153,7 @@ void main() {
     test('异常页不会被当成社区准则写入缓存', () async {
       await expectLater(
         reviewWith(
-          guidelinesFetcher: () async =>
-              '<html><body>Cloudflare checking your browser. Enable JavaScript to continue.</body></html>',
+          guidelinesFetcher: () async => '<html><body>Cloudflare checking your browser. Enable JavaScript to continue.</body></html>',
         ),
         throwsA(isA<AiPostReviewException>()),
       );
@@ -164,11 +168,10 @@ String _guidelinesHtml(String text) {
   return '<html><body><main>$body</main></body></html>';
 }
 
-typedef _FakeSend =
-    Stream<AiChatChunk> Function({
-      required String? systemPrompt,
-      required List<AiChatMessage> messages,
-    });
+typedef _FakeSend = Stream<AiChatChunk> Function({
+  required String? systemPrompt,
+  required List<AiChatMessage> messages,
+});
 
 class _FakeAiChatService extends AiChatService {
   _FakeAiChatService({required _FakeSend onSend}) : _onSend = onSend;

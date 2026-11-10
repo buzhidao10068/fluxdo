@@ -1,16 +1,28 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../network_logger.dart';
 import '../doh/network_settings_service.dart';
 import '../proxy/proxy_settings_service.dart';
+import '../doh_proxy/proxy_certificate.dart';
+import '../doh_proxy/proxy_ca_material.dart';
 
 class NetworkHttpAdapter implements HttpClientAdapter {
-  NetworkHttpAdapter(this._settings, this._proxySettings);
+  NetworkHttpAdapter(this._settings, this._proxySettings)
+    : _certificatePemOverride = null;
 
+  @visibleForTesting
+  NetworkHttpAdapter.forTesting(
+    this._settings,
+    this._proxySettings, {
+    required Future<String?> Function() certificatePem,
+  }) : _certificatePemOverride = certificatePem;
+
+  final Future<String?> Function()? _certificatePemOverride;
   final NetworkSettingsService _settings;
   final ProxySettingsService _proxySettings;
   HttpClient? _cachedClient;
@@ -19,7 +31,7 @@ class NetworkHttpAdapter implements HttpClientAdapter {
   bool _closed = false;
   bool _cachedProxyCaEnabled = false;
   Uint8List? _proxyCaBytes;
-  Future<void>? _proxyCaLoad;
+  String? _proxyCaPem;
 
   @override
   Future<ResponseBody> fetch(
@@ -28,7 +40,9 @@ class NetworkHttpAdapter implements HttpClientAdapter {
     Future<void>? cancelFuture,
   ) async {
     if (_closed) {
-      throw StateError("Can't establish connection after the adapter was closed.");
+      throw StateError(
+        "Can't establish connection after the adapter was closed.",
+      );
     }
     return _fetch(options, requestStream, cancelFuture);
   }
@@ -143,7 +157,8 @@ class NetworkHttpAdapter implements HttpClientAdapter {
       responseStream.cast(),
       responseStream.statusCode,
       headers: headers,
-      isRedirect: responseStream.isRedirect || responseStream.redirects.isNotEmpty,
+      isRedirect:
+          responseStream.isRedirect || responseStream.redirects.isNotEmpty,
       redirects: responseStream.redirects
           .map((e) => RedirectRecord(e.statusCode, e.method, e.location))
           .toList(),
@@ -205,28 +220,34 @@ class NetworkHttpAdapter implements HttpClientAdapter {
       context.setTrustedCertificatesBytes(_proxyCaBytes!);
     } catch (e) {
       NetworkLogger.log('[DOH] 导入代理 CA 失败: $e');
-      return null;
+      rethrow;
     }
     return context;
   }
 
   Future<void> _ensureProxyCaLoaded() async {
-    if (!_shouldUseLocalGateway) {
+    if (!_shouldUseLocalGateway || !_settings.current.dohEnabled) {
       return;
     }
-    if (_proxyCaBytes != null) {
-      return;
-    }
-    _proxyCaLoad ??= _loadProxyCa();
-    await _proxyCaLoad;
-  }
-
-  Future<void> _loadProxyCa() async {
     try {
-      final data = await rootBundle.load('assets/certs/proxy_ca.pem');
-      _proxyCaBytes = data.buffer.asUint8List();
+      final pem =
+          await (_certificatePemOverride?.call() ??
+              ProxyCertificate.getCertificatePem());
+      if (pem == null) throw StateError('代理 CA 未就绪');
+      if (pem == _proxyCaPem && _proxyCaBytes != null) return;
+      final bytes = proxyCaTrustBytes(pem);
+      // 当前 CA 变更时重新建上下文，不把旧 CA 累加进应用请求客户端。
+      _cachedClient?.close(force: false);
+      _cachedClient = null;
+      _proxyCaPem = pem;
+      _proxyCaBytes = bytes;
     } catch (e) {
+      _cachedClient?.close(force: false);
+      _cachedClient = null;
+      _proxyCaPem = null;
+      _proxyCaBytes = null;
       NetworkLogger.log('[DOH] 读取代理 CA 失败: $e');
+      rethrow;
     }
   }
 

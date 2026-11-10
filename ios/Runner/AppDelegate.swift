@@ -8,6 +8,7 @@ import workmanager_apple
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   // 窗口由 UIScene 持有，不能再从 AppDelegate.window 获取界面。
   private weak var flutterViewController: FlutterViewController?
+  private var profileTransfer: MobileconfigTransfer?
 
   func connectFlutterViewController(_ controller: FlutterViewController) {
     flutterViewController = controller
@@ -46,8 +47,7 @@ import workmanager_apple
           result(false)
           return
         }
-        DohProxyCertHandler.shared.setCaCertPem(pem)
-        result(true)
+        result(DohProxyCertHandler.shared.setCaCertPem(pem))
       case "clear":
         DohProxyCertHandler.shared.clearCaCert()
         result(true)
@@ -68,7 +68,11 @@ import workmanager_apple
           result(FlutterError(code: "INVALID_ARGS", message: "Expected mobileconfig string", details: nil))
           return
         }
-        self?.serveMobileconfigViaSafari(mobileconfig) { success in
+        guard let self = self else {
+          result(false)
+          return
+        }
+        self.serveMobileconfigViaSafari(mobileconfig) { success in
           result(success)
         }
       default:
@@ -78,7 +82,7 @@ import workmanager_apple
 
     // 注册浏览器 channel（应用链接解析与启动）
     let browserChannel = FlutterMethodChannel(
-      name: "com.github.lingyan000.fluxdo/browser",
+      name: "com.buzhidao10068.fluxdo/browser",
       binaryMessenger: messenger
     )
     browserChannel.setMethodCallHandler { (call, result) in
@@ -104,7 +108,7 @@ import workmanager_apple
     }
 
     let appIconChannel = FlutterMethodChannel(
-      name: "com.github.lingyan000.fluxdo/app_icon",
+      name: "com.buzhidao10068.fluxdo/app_icon",
       binaryMessenger: messenger
     )
     appIconChannel.setMethodCallHandler { (call, result) in
@@ -643,117 +647,197 @@ import workmanager_apple
   /// 启动临时 HTTP server 提供 mobileconfig 下载，使用 SFSafariViewController 在应用内打开
   /// 应用保持前台运行，避免后台被系统回收导致下载失败
   private func serveMobileconfigViaSafari(_ mobileconfig: String, completion: @escaping (Bool) -> Void) {
-    DispatchQueue.global(qos: .userInitiated).async {
-      // 创建 TCP socket
-      let serverSocket = socket(AF_INET, SOCK_STREAM, 0)
-      guard serverSocket >= 0 else {
-        DispatchQueue.main.async { completion(false) }
-        return
-      }
+    guard profileTransfer == nil, let controller = flutterViewController,
+          controller.presentedViewController == nil, controller.view.window != nil else {
+      completion(false)
+      return
+    }
+    let transfer = MobileconfigTransfer { [weak self] success in
+      self?.profileTransfer = nil
+      completion(success)
+    }
+    profileTransfer = transfer
+    transfer.start(mobileconfig, presenting: controller)
+  }
 
-      var reuse: Int32 = 1
-      setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+}
 
-      // 设置 accept 超时 30 秒，防止永久阻塞
-      var timeout = timeval(tv_sec: 30, tv_usec: 0)
-      setsockopt(serverSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+// 与 AppDelegate 放在同一编译文件中，无需修改 Xcode 工程文件引用。
+/// 会话的成功只表示字节发送完成，安装和完全信任仍需用户确认。
+final class MobileconfigTransfer: NSObject, SFSafariViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
+  private let lock = NSLock()
+  private var finished = false
+  private var completion: ((Bool) -> Void)?
+  private var safari: SFSafariViewController?
+  private let timeout: TimeInterval
 
-      var addr = sockaddr_in()
-      addr.sin_family = sa_family_t(AF_INET)
-      addr.sin_port = 0
-      addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-      addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+  init(timeout: TimeInterval = 30, completion: @escaping (Bool) -> Void) {
+    self.timeout = timeout
+    self.completion = completion
+  }
 
-      let bindResult = withUnsafePointer(to: &addr) {
-        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-          bind(serverSocket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-        }
-      }
-      guard bindResult == 0 else {
-        close(serverSocket)
-        DispatchQueue.main.async { completion(false) }
-        return
-      }
+  private var isFinished: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return finished
+  }
 
-      listen(serverSocket, 5)
+  // 回调只完成一次；socket 仅由后台任务关闭，避免文件描述符重用竞态。
+  func finish(_ success: Bool) {
+    lock.lock()
+    guard !finished else { lock.unlock(); return }
+    finished = true
+    let callback = completion
+    completion = nil
+    lock.unlock()
+    DispatchQueue.main.async {
+      if !success { self.safari?.dismiss(animated: true) }
+      callback?(success)
+    }
+  }
 
-      var boundAddr = sockaddr_in()
-      var addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-      withUnsafeMutablePointer(to: &boundAddr) {
-        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-          getsockname(serverSocket, $0, &addrLen)
-        }
-      }
-      let port = Int(CFSwapInt16BigToHost(boundAddr.sin_port))
+  func safariViewControllerDidFinish(_ controller: SFSafariViewController) { finish(false) }
 
-      // 使用 SFSafariViewController 在应用内打开，保持前台运行
-      let url = URL(string: "http://127.0.0.1:\(port)/ca.mobileconfig")!
+  func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    finish(false)
+  }
+
+  func start(_ mobileconfig: String, presenting controller: UIViewController) {
+    startServing(mobileconfig) { url in
       DispatchQueue.main.async {
-        guard let rootVC = self.flutterViewController else {
-          completion(false)
-          return
-        }
-        let safariVC = SFSafariViewController(url: url)
-        safariVC.modalPresentationStyle = .pageSheet
-        rootVC.present(safariVC, animated: true)
-        completion(true)
-      }
-
-      // 循环处理连接：Safari 可能发送 favicon 等额外请求
-      let body = Data(mobileconfig.utf8)
-      var served = false
-      for _ in 0..<10 {
-        let clientSocket = accept(serverSocket, nil, nil)
-        guard clientSocket >= 0 else { break } // 超时或错误
-
-        // 读取请求
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        let bytesRead = recv(clientSocket, &buffer, buffer.count, 0)
-
-        // 解析请求路径
-        var isMobileconfig = false
-        if bytesRead > 0,
-           let request = String(bytes: buffer[..<bytesRead], encoding: .utf8),
-           let firstLine = request.split(separator: "\r\n").first {
-          isMobileconfig = firstLine.contains("/ca.mobileconfig")
-        }
-
-        if isMobileconfig {
-          // 返回描述文件
-          let header = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: application/x-apple-aspen-config\r\n" +
-            "Content-Disposition: attachment; filename=\"DOH_Proxy_CA.mobileconfig\"\r\n" +
-            "Content-Length: \(body.count)\r\n" +
-            "Connection: close\r\n\r\n"
-          _ = send(clientSocket, header, header.utf8.count, 0)
-          body.withUnsafeBytes { ptr in
-            _ = send(clientSocket, ptr.baseAddress, body.count, 0)
-          }
-          close(clientSocket)
-          served = true
-          break
-        } else {
-          // 非目标请求，返回 404
-          let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-          _ = send(clientSocket, notFound, notFound.utf8.count, 0)
-          close(clientSocket)
-        }
-      }
-
-      close(serverSocket)
-
-      // 如果超时未提供文件，关闭 SFSafariViewController
-      if !served {
-        DispatchQueue.main.async {
-          self.flutterViewController?.presentedViewController?.dismiss(animated: true)
-        }
+        guard !self.isFinished, controller.presentedViewController == nil,
+              controller.view.window != nil else { self.finish(false); return }
+        let safari = SFSafariViewController(url: url)
+        self.safari = safari
+        safari.delegate = self
+        safari.modalPresentationStyle = .pageSheet
+        controller.present(safari, animated: true)
+        safari.presentationController?.delegate = self
       }
     }
+  }
+
+  // 网络传输独立于呈现界面，原生测试可直接连接实际监听 socket。
+  func startServing(_ mobileconfig: String, open: @escaping (URL) -> Void) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.finish(false) }
+    DispatchQueue.global(qos: .userInitiated).async {
+      let success = self.serve(Data(mobileconfig.utf8), open: open)
+      self.finish(success)
+    }
+  }
+
+  // 使用单调时钟与非阻塞 socket；accept/recv/send 共用会话截止时间。
+  private func wait(_ socket: Int32, events: Int16, deadline: UInt64) -> Bool {
+    while !isFinished && DispatchTime.now().uptimeNanoseconds < deadline {
+      var descriptor = pollfd(fd: socket, events: events, revents: 0)
+      let result = poll(&descriptor, 1, 100)
+      if result > 0 { return descriptor.revents & events != 0 }
+      if result < 0 && errno != EINTR { return false }
+    }
+    return false
+  }
+
+  private func configure(_ socket: Int32) -> Bool {
+    var enabled: Int32 = 1
+    return fcntl(socket, F_SETFL, O_NONBLOCK) == 0 &&
+      setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &enabled,
+                 socklen_t(MemoryLayout<Int32>.size)) == 0
+  }
+
+  /// 支持短写，只有每个字节均交给 socket 后才返回 true。
+  static func writeAll(_ data: Data, write: (UnsafeRawPointer, Int) -> Int) -> Bool {
+    return data.withUnsafeBytes { bytes in
+      guard let base = bytes.baseAddress else { return data.isEmpty }
+      var offset = 0
+      while offset < bytes.count {
+        let count = write(base.advanced(by: offset), bytes.count - offset)
+        guard count > 0 && count <= bytes.count - offset else { return false }
+        offset += count
+      }
+      return true
+    }
+  }
+
+  private func sendAll(_ data: Data, socket: Int32, deadline: UInt64) -> Bool {
+    return Self.writeAll(data) { pointer, count in
+      while self.wait(socket, events: Int16(POLLOUT), deadline: deadline) {
+        let sent = send(socket, pointer, count, 0)
+        if sent >= 0 { return sent }
+        if errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK { return -1 }
+      }
+      return -1
+    }
+  }
+
+  private func serve(_ body: Data, open: (URL) -> Void) -> Bool {
+    let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(timeout * 1_000_000_000)
+    let server = socket(AF_INET, SOCK_STREAM, 0)
+    guard server >= 0 else { return false }
+    defer { close(server) }
+    guard configure(server) else { return false }
+    var address = sockaddr_in()
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_addr.s_addr = inet_addr("127.0.0.1")
+    let bound = withUnsafePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        bind(server, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+      }
+    }
+    guard bound == 0, listen(server, 5) == 0 else { return false }
+    var size = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let named = withUnsafeMutablePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(server, $0, &size) }
+    }
+    guard named == 0 else { return false }
+    // 每次会话独立路径，避免复用上一轮下载 URL。
+    let path = "/\(UUID().uuidString)/ca.mobileconfig"
+    guard let url = URL(string: "http://127.0.0.1:\(UInt16(bigEndian: address.sin_port))\(path)") else {
+      return false
+    }
+    open(url)
+    while wait(server, events: Int16(POLLIN), deadline: deadline) {
+      let client = accept(server, nil, nil)
+      if client < 0 {
+        if errno == EINTR || errno == EAGAIN { continue }
+        return false
+      }
+      let delivered: Bool? = {
+        defer { close(client) }
+        guard configure(client) else { return false }
+        var request = Data()
+        var buffer = [UInt8](repeating: 0, count: 2048)
+        let requestDeadline = min(deadline, DispatchTime.now().uptimeNanoseconds + 5_000_000_000)
+        while request.count < 8192 && wait(client, events: Int16(POLLIN), deadline: requestDeadline) {
+          let count = recv(client, &buffer, buffer.count, 0)
+          if count < 0 && (errno == EINTR || errno == EAGAIN) { continue }
+          guard count > 0 else { return false }
+          request.append(contentsOf: buffer.prefix(count))
+          if request.range(of: Data("\r\n\r\n".utf8)) != nil { break }
+        }
+        guard request.range(of: Data("\r\n\r\n".utf8)) != nil,
+              let text = String(data: request, encoding: .utf8),
+              let first = text.components(separatedBy: "\r\n").first else { return false }
+        let parts = first.split(separator: " ")
+        guard parts.count == 3, parts[0] == "GET", parts[1] == Substring(path) else {
+          _ = sendAll(Data("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8),
+                      socket: client, deadline: deadline)
+          return nil
+        }
+        let header = "HTTP/1.1 200 OK\r\n" +
+          "Content-Type: application/x-apple-aspen-config\r\n" +
+          "Content-Disposition: attachment; filename=\"FluxDO_NodeLoc_DOH_Proxy_CA.mobileconfig\"\r\n" +
+          "Content-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+        return sendAll(Data(header.utf8), socket: client, deadline: deadline) &&
+          sendAll(body, socket: client, deadline: deadline)
+      }()
+      if let delivered = delivered { return delivered }
+    }
+    return false
   }
 }
 
 // 场景连接后再绑定依赖界面的通道，其余生命周期交给 Flutter 转发给插件。
-// 与 AppDelegate 放在同一编译文件中，无需修改 Xcode 工程文件引用。
 class SceneDelegate: FlutterSceneDelegate {
   override func scene(
     _ scene: UIScene,

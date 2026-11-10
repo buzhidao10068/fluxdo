@@ -4,9 +4,10 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:enhanced_cookie_jar/enhanced_cookie_jar.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:synchronized/synchronized.dart';
+
+import '../../../utils/app_directories.dart';
 
 import '../../../constants.dart';
 import '../../windows_webview_environment_service.dart';
@@ -97,7 +98,7 @@ class CookieJarService {
     if (_initialized) return;
 
     try {
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = await getAppDataDirectory();
       final cookiePath = path.join(directory.path, '.cookies');
 
       final cookieDir = io.Directory(cookiePath);

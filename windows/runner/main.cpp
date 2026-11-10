@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "app_links/app_links_plugin_c_api.h"
+#include "app_identity.h"
 #include "flutter_window.h"
 #include "utils.h"
 
@@ -17,7 +18,7 @@ static bool SendAppLinkToInstance(const wchar_t* command_line) {
     return false;
   }
 
-  HWND hwnd = ::FindWindow(L"FLUTTER_RUNNER_WIN32_WINDOW", L"FluxDO");
+  HWND hwnd = ::FindWindow(kWindowClassName, L"FluxDO");
   if (hwnd == nullptr) {
     return false;
   }

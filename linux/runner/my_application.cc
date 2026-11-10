@@ -185,6 +185,17 @@ static void my_application_class_init(MyApplicationClass* klass) {
 static void my_application_init(MyApplication* self) {}
 
 MyApplication* my_application_new() {
+  // path_provider 会回退到旧的同名可执行文件目录。先建立应用 ID 目录，
+  // 确保包括 SharedPreferences 在内的插件从首次启动起使用独立路径。
+  // 创建失败时停止启动，不能回退到可能属于原版的数据目录。
+  const gchar* bases[] = {g_get_user_data_dir(), g_get_user_cache_dir()};
+  for (const gchar* base : bases) {
+    g_autofree gchar* directory = g_build_filename(base, APPLICATION_ID, nullptr);
+    if (g_mkdir_with_parents(directory, 0700) != 0) {
+      g_error("Cannot create application directory: %s", directory);
+    }
+  }
+
   // Set the program name to the application ID, which helps various systems
   // like GTK and desktop environments map this running application to its
   // corresponding .desktop file. This ensures better integration by allowing

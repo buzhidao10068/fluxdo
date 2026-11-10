@@ -237,6 +237,8 @@ class NetworkSettingsService {
   bool _lastStartFailed = false;
   bool _wasRunningBeforeApply = false;
   bool _pendingStart = false;
+  bool _certificateUpdatePending = false;
+  Future<void> _proxyStateQueue = Future.value();
   final Map<String, _ResolvedHostEntry> _resolvedHostCache = {};
   final Map<String, Future<_ResolvedHostEntry?>> _hostLookupInflight = {};
   final Set<String> _backgroundRefreshingHosts = <String>{};
@@ -525,7 +527,25 @@ class NetworkSettingsService {
     _touch();
   }
 
-  Future<void> _applyProxyState() async {
+  Future<void> _applyProxyState() => _queueProxyState(() async {
+    if (_certificateUpdatePending) {
+      _setPendingStart(false);
+      isApplying.value = false;
+      return;
+    }
+    await _applyProxyStateNow();
+  });
+
+  Future<void> _queueProxyState(Future<void> Function() operation) {
+    final result = _proxyStateQueue.then((_) => operation());
+    _proxyStateQueue = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  Future<void> _applyProxyStateNow() async {
     final startedAt = DateTime.now();
     _applyDepth++;
     if (_applyDepth == 1) {
@@ -631,10 +651,11 @@ class NetworkSettingsService {
       String? caKeyPem;
       if (mitmConnect && await CertPreferenceService.usePerDevice()) {
         final certService = PerDeviceCertService.instance;
-        if (certService.isLoaded || await certService.ensureCaCert()) {
-          caCertPem = certService.certPem;
-          caKeyPem = certService.keyPem;
+        if (!await certService.ensureCaCert()) {
+          throw StateError('设备 CA 未就绪，无法启动代理');
         }
+        caCertPem = certService.certPem;
+        caKeyPem = certService.keyPem;
       }
 
       // Rust 代理始终为 WebView 提供 DOH/代理支持，enableDoh 不受 rhttp 影响
@@ -730,6 +751,29 @@ class NetworkSettingsService {
     _beginApply(enabled: shouldRunLocalProxy);
     await _applyProxyState();
     _touch();
+  }
+
+  /// 阻止设置监听器在 CA 更新期间重新启动旧代理，并等待已有启动结束。
+  Future<void> pauseForCertificateUpdate() async {
+    _certificateUpdatePending = true;
+    _applyDebounce?.cancel();
+    await _queueProxyState(() async {
+      await _rustProxyService.stop(verifyStopped: true);
+      await _clearWebViewProxy();
+      _setPendingStart(false);
+      _setStartFailed(shouldRunLocalProxy);
+      isApplying.value = false;
+      _touch();
+    });
+  }
+
+  Future<void> resumeAfterCertificateUpdate() async {
+    _certificateUpdatePending = false;
+    await restartProxy();
+    if (shouldRunLocalProxy &&
+        (_lastStartFailed || !_rustProxyService.isRunning)) {
+      throw StateError('新 CA 的代理启动失败');
+    }
   }
 
   /// 检查代理是否仍然存活，若已意外停止则自动重启

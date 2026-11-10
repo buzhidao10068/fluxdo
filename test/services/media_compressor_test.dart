@@ -11,6 +11,10 @@ import 'package:fluxdo/services/uploads/media_upload_limits.dart';
 void main() {
   test('媒体使用站点附件上限，不再固定4MiB', () {
     expect(
+      MediaUploadLimits.fromSettings({'max_attachment_size_kb': 15360}),
+      15 * 1024 * 1024,
+    );
+    expect(
       MediaUploadLimits.fromSettings({'max_attachment_size_kb': 20480}),
       20 * 1024 * 1024,
     );

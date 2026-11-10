@@ -1,18 +1,12 @@
-name: Build Flatpak WPE Layer
+name: Flatpak WPE Layer (archived)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/flatpak-wpe-layer.yaml'
-      - 'flatpak/com.github.lingyan000.fluxdo.wpe-layer.yml'
-      - 'flatpak/wpe-layer.version'
-      - 'scripts/ci/flatpak/package_wpe_layer.sh'
 
 jobs:
   build_wpe_layer:
+    # 当前仅交付 Android，保留历史实现但停止执行和公开发布。
+    if: ${{ false }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
@@ -42,7 +36,7 @@ jobs:
             --ccache \
             --verbose \
             flatpak_wpe_layer \
-            flatpak/com.github.lingyan000.fluxdo.wpe-layer.yml
+            flatpak/com.buzhidao10068.fluxdo.wpe-layer.yml
 
       - name: Package WPE layer
         run: |

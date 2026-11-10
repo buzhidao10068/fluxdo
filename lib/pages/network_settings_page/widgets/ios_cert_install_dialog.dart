@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 
 import '../../../l10n/s.dart';
 import '../../../services/network/doh_proxy/per_device_cert_service.dart';
+import '../../../services/network/doh_proxy/device_ca_rotation.dart';
+import '../../../services/network/doh_proxy/proxy_certificate.dart';
+import '../../../services/network/doh/network_settings_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../utils/dialog_utils.dart';
 import '../../../widgets/common/app_bottom_sheet.dart';
@@ -20,6 +23,8 @@ Future<bool?> showIosCertInstallDialog(BuildContext context) {
   return showAppBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
+    isDismissible: false,
+    enableDrag: false,
     backgroundColor: Colors.transparent,
     builder: (_) => const _IosCertInstallSheet(),
   );
@@ -36,14 +41,24 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
   int _currentStep = 0;
   bool _installing = false;
   bool _regenerating = false;
+  bool _finishing = false;
+  bool get _busy => _installing || _regenerating || _finishing;
+
+  DeviceCaRotation get _rotation => DeviceCaRotation(
+    certificates: PerDeviceCertService.instance,
+    pauseProxy: NetworkSettingsService.instance.pauseForCertificateUpdate,
+    refreshTrust: ProxyCertificate.reinitialize,
+    resumeProxy: NetworkSettingsService.instance.resumeAfterCertificateUpdate,
+  );
 
   static const _browserChannel = MethodChannel(
-    'com.github.lingyan000.fluxdo/browser',
+    'com.buzhidao10068.fluxdo/browser',
   );
 
   Future<void> _downloadProfile() async {
     setState(() => _installing = true);
     try {
+      await _rotation.prepare();
       final ok = await PerDeviceCertService.instance.installProfile();
       if (mounted) {
         if (ok) {
@@ -52,17 +67,23 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
           ToastService.showError(S.current.dohSettings_certDownloadFailed);
         }
       }
+    } catch (_) {
+      if (mounted) {
+        ToastService.showError(S.current.dohSettings_certDownloadFailed);
+      }
     } finally {
       if (mounted) setState(() => _installing = false);
     }
   }
 
   Future<void> _regenerateAndDownload() async {
-    setState(() => _regenerating = true);
+    setState(() {
+      _regenerating = true;
+      _currentStep = 0;
+    });
     try {
       final certService = PerDeviceCertService.instance;
-      await certService.clearCertInstalled();
-      await certService.reset();
+      await _rotation.prepare(regenerate: true);
       final ok = await certService.installProfile();
       if (mounted) {
         if (ok) {
@@ -71,6 +92,10 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
         } else {
           ToastService.showError(S.current.dohSettings_certRegenerateFailed);
         }
+      }
+    } catch (_) {
+      if (mounted) {
+        ToastService.showError(S.current.dohSettings_certRegenerateFailed);
       }
     } finally {
       if (mounted) setState(() => _regenerating = false);
@@ -85,9 +110,19 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
     } catch (_) {}
   }
 
-  void _finish() {
-    PerDeviceCertService.instance.markCertInstalled();
-    Navigator.pop(context, true);
+  Future<void> _finish() async {
+    setState(() => _finishing = true);
+    try {
+      await _rotation.prepare();
+      await PerDeviceCertService.instance.markCertInstalled();
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      if (mounted) {
+        ToastService.showError(S.current.dohSettings_certRegenerateFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _finishing = false);
+    }
   }
 
   @override
@@ -95,48 +130,52 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
     final theme = Theme.of(context);
     final l10n = context.l10n;
 
-    return AppSheetScaffold(
-      contentPadding: EdgeInsets.zero,
-      titleWidget: Row(
-        children: [
-          Icon(Symbols.security_rounded, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
-          Text(
-            l10n.dohSettings_certDialogTitle,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              l10n.dohSettings_certDialogDesc,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+    return PopScope(
+      canPop: !_busy,
+      child: AppSheetScaffold(
+        showCloseButton: !_busy,
+        contentPadding: EdgeInsets.zero,
+        titleWidget: Row(
+          children: [
+            Icon(Symbols.security_rounded, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              l10n.dohSettings_certDialogTitle,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-
-          // 步骤指示器
-          _buildStepIndicator(theme, l10n),
-          const SizedBox(height: 20),
-
-          // 步骤内容
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: _buildStepContent(theme, l10n),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                l10n.dohSettings_certDialogDesc,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+
+            // 步骤指示器
+            _buildStepIndicator(theme, l10n),
+            const SizedBox(height: 20),
+
+            // 步骤内容
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _buildStepContent(theme, l10n),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -170,7 +209,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
           final isDone = step < _currentStep;
 
           return GestureDetector(
-            onTap: () => setState(() => _currentStep = step),
+            onTap: _busy ? null : () => setState(() => _currentStep = step),
             child: Column(
               children: [
                 Container(
@@ -250,7 +289,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: _installing || _regenerating ? null : _downloadProfile,
+            onPressed: _busy ? null : _downloadProfile,
             icon: _installing
                 ? const _MiniSpinner()
                 : const Icon(Symbols.download_rounded, size: 18),
@@ -264,9 +303,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
         const SizedBox(height: 8),
         Center(
           child: TextButton.icon(
-            onPressed: _installing || _regenerating
-                ? null
-                : _regenerateAndDownload,
+            onPressed: _busy ? null : _regenerateAndDownload,
             icon: _regenerating
                 ? const _MiniSpinner()
                 : const Icon(Symbols.refresh_rounded, size: 16),
@@ -339,7 +376,7 @@ class _IosCertInstallSheetState extends State<_IosCertInstallSheet> {
         SizedBox(
           width: double.infinity,
           child: FilledButton.tonal(
-            onPressed: _finish,
+            onPressed: _busy ? null : _finish,
             child: Text(l10n.dohSettings_certAllDone),
           ),
         ),

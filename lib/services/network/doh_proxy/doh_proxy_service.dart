@@ -5,10 +5,13 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../network_logger.dart';
 import '../../../l10n/s.dart';
 import 'doh_proxy_ffi.dart';
+import 'ffi_worker.dart';
 import '../doh/ech_dns_policy.dart';
 
 /// DOH (DNS over HTTPS) 代理服务
@@ -17,8 +20,32 @@ import '../doh/ech_dns_policy.dart';
 /// 在桌面平台（Windows/macOS/Linux）使用进程方式运行代理
 /// 在移动平台（Android/iOS）使用 FFI 直接调用 Rust 库
 class DohProxyService {
-  DohProxyService._();
+  DohProxyService._() : _ffiTimeout = const Duration(seconds: 10);
   static final DohProxyService instance = DohProxyService._();
+
+  @visibleForTesting
+  DohProxyService.forTesting({
+    required Future<int> Function(Map<String, dynamic>) startFfi,
+    required Future<void> Function() stopFfi,
+    required Future<Map<String, dynamic>> Function() statusFfi,
+    this._ffiTimeout = const Duration(seconds: 10),
+  }) : _startFfiOverride = startFfi,
+       _stopFfiOverride = stopFfi,
+       _statusFfiOverride = statusFfi;
+
+  @visibleForTesting
+  DohProxyService.withWorkerForTesting(FfiWorker worker)
+    : _ffiWorkerOverride = worker,
+      _ffiTimeout = worker.timeout;
+
+  Future<int> Function(Map<String, dynamic>)? _startFfiOverride;
+  Future<void> Function()? _stopFfiOverride;
+  Future<Map<String, dynamic>> Function()? _statusFfiOverride;
+  FfiWorker? _ffiWorkerOverride;
+  bool get _usesFfi =>
+      _ffiWorkerOverride != null ||
+      _startFfiOverride != null ||
+      DohProxyFfi.isAvailable;
 
   // 桌面平台进程管理
   Process? _process;
@@ -40,6 +67,11 @@ class DohProxyService {
   String? _currentUpstreamSignature;
   EchDnsPolicy _echDnsPolicy = const EchDnsPolicy();
   String? _currentEchDnsPolicySignature;
+  String? _currentCaSignature;
+
+  // 只缓存摘要用于配置比较，不另存或记录私钥。
+  String _caSignature(String? cert, String? key) =>
+      sha256.convert(utf8.encode(jsonEncode([cert, key]))).toString();
 
   void configureEchDnsPolicy(EchDnsPolicy policy) {
     _echDnsPolicy = policy;
@@ -47,9 +79,10 @@ class DohProxyService {
   }
 
   String? _lastError;
-  // ignore: unused_field
-  Isolate? _ffiIsolate; // 保持引用防止 GC
-  SendPort? _ffiSendPort;
+  final Duration _ffiTimeout;
+  late final FfiWorker _ffiWorker =
+      _ffiWorkerOverride ?? FfiWorker(_ffiIsolateEntry, timeout: _ffiTimeout);
+  bool _ffiStateUncertain = false;
   Future<void> _ffiQueue = Future.value();
 
   /// 代理是否正在运行
@@ -105,19 +138,25 @@ class DohProxyService {
           _currentMitmConnect == mitmConnect &&
           _currentH2Mitm == h2Mitm &&
           _currentEchDnsPolicySignature == jsonEncode(_echDnsPolicy.toJson()) &&
+          _currentCaSignature == _caSignature(caCertPem, caKeyPem) &&
           _currentUpstreamSignature == upstreamSignature;
-      if (sameConfig) {
+      if (sameConfig && !_ffiStateUncertain) {
         NetworkLogger.log('[DOH] 代理已在运行，端口: $_port');
         return true;
       }
       NetworkLogger.log('[DOH] 配置变更，重启代理');
-      await stop();
+      try {
+        await stop(verifyStopped: true);
+      } catch (e) {
+        _lastError = '无法停止旧代理: $e';
+        return false;
+      }
     }
 
     _lastError = null;
 
     // 根据平台选择启动方式
-    if (DohProxyFfi.isAvailable) {
+    if (_usesFfi) {
       final result = await _startWithFfi(
         preferredPort,
         enableDoh,
@@ -138,7 +177,11 @@ class DohProxyService {
         h2Mitm,
       );
       // 桌面平台 FFI 加载失败时，回退到进程模式
-      if (!result && DohProxyFfi.canFallbackToProcess) {
+      if (!result &&
+          !_ffiStateUncertain &&
+          DohProxyFfi.canFallbackToProcess &&
+          caCertPem == null &&
+          caKeyPem == null) {
         NetworkLogger.log('[DOH] FFI 启动失败，尝试进程模式');
         _lastError = null;
         return _startWithProcess(
@@ -161,6 +204,11 @@ class DohProxyService {
       }
       return result;
     } else {
+      // 进程 CLI 不支持传入设备 CA，不能静默回退到共享内置 CA。
+      if (caCertPem != null || caKeyPem != null) {
+        _lastError = '设备 CA 需要可用的 FFI 代理';
+        return false;
+      }
       return _startWithProcess(
         preferredPort,
         enableDoh,
@@ -209,7 +257,8 @@ class DohProxyService {
 
         final policy = _echDnsPolicy;
         _currentPreferredPort = port;
-        await _ensureFfiStopped();
+        if (_ffiStateUncertain) await _callFfiStop();
+        await _ensureFfiStopped(requireStopped: true);
         final resultPort = await _callFfiStart(
           port: port,
           enableDoh: enableDoh,
@@ -249,6 +298,7 @@ class DohProxyService {
         _currentMitmConnect = mitmConnect;
         _currentH2Mitm = h2Mitm;
         _currentEchDnsPolicySignature = jsonEncode(policy.toJson());
+        _currentCaSignature = _caSignature(caCertPem, caKeyPem);
         _currentUpstreamSignature = _buildUpstreamSignature(
           protocol: upstreamProtocol,
           host: upstreamHost,
@@ -261,6 +311,7 @@ class DohProxyService {
         return true;
       });
     } catch (e) {
+      _ffiStateUncertain = true;
       _lastError = 'FFI 启动异常: $e';
       NetworkLogger.log('[DOH] $_lastError');
       return false;
@@ -369,6 +420,7 @@ class DohProxyService {
           _currentMitmConnect = mitmConnect;
           _currentH2Mitm = h2Mitm;
           _currentEchDnsPolicySignature = policyJson;
+          _currentCaSignature = _caSignature(null, null);
           _currentUpstreamSignature = _buildUpstreamSignature(
             protocol: upstreamProtocol,
             host: upstreamHost,
@@ -431,8 +483,10 @@ class DohProxyService {
   }
 
   /// 停止 DOH 代理
-  Future<void> stop() async {
-    if (DohProxyFfi.isAvailable) {
+  Future<void> stop({bool verifyStopped = false}) async {
+    if (_process != null) {
+      await _stopWithProcess();
+    } else if (_usesFfi) {
       await _enqueueFfiOp(() async {
         await _stopWithFfi();
       });
@@ -445,10 +499,12 @@ class DohProxyService {
   Future<void> _stopWithFfi() async {
     try {
       await _callFfiStop();
-      await _ensureFfiStopped();
+      await _ensureFfiStopped(requireStopped: true);
       NetworkLogger.log('[DOH] FFI 代理已停止');
     } catch (e) {
+      _ffiStateUncertain = true;
       NetworkLogger.log('[DOH] FFI 停止异常: $e');
+      rethrow;
     }
   }
 
@@ -482,6 +538,7 @@ class DohProxyService {
     _currentMitmConnect = null;
     _currentH2Mitm = null;
     _currentUpstreamSignature = null;
+    _currentCaSignature = null;
     // 注意：不清除 _lastError，保留用于 UI 展示
   }
 
@@ -609,13 +666,16 @@ class DohProxyService {
   /// 返回 true 表示代理正常运行，false 表示已停止或状态不一致。
   Future<bool> checkAlive() async {
     if (!_isRunning) return false;
-    if (!DohProxyFfi.isAvailable) {
+    if (!_usesFfi) {
       // 进程模式：检查进程是否存活
       return _process != null;
     }
     try {
       final status = await _callFfiStatus();
-      final running = status['running'] as bool? ?? false;
+      if (status['ok'] != true || status['running'] is! bool) {
+        throw StateError('无法确认代理运行状态');
+      }
+      final running = status['running'] as bool;
       if (!running) {
         // Rust 侧已停止，同步 Dart 侧状态
         NetworkLogger.log('[DOH] 健康检查: Rust 代理已停止，同步 Dart 状态');
@@ -623,6 +683,7 @@ class DohProxyService {
       }
       return running;
     } catch (e) {
+      _ffiStateUncertain = true;
       NetworkLogger.log('[DOH] 健康检查异常: $e');
       return false;
     }
@@ -640,11 +701,7 @@ class DohProxyService {
   Future<({String certPem, String keyPem})?> generateCa() async {
     if (!DohProxyFfi.isAvailable) return null;
     return _enqueueFfiOp(() async {
-      final sendPort = await _ensureFfiIsolate();
-      final response = ReceivePort();
-      sendPort.send({'cmd': 'generate_ca', 'replyTo': response.sendPort});
-      final result = await response.first;
-      response.close();
+      final result = await _ffiWorker.request({'cmd': 'generate_ca'});
       if (result is Map && result['ok'] == true) {
         return (
           certPem: result['certPem'] as String,
@@ -812,9 +869,7 @@ class DohProxyService {
     bool h2Mitm = false,
     required EchDnsPolicy echDnsPolicy,
   }) async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({
+    final arguments = <String, dynamic>{
       'cmd': 'start',
       'port': port,
       'enableDoh': enableDoh,
@@ -835,10 +890,11 @@ class DohProxyService {
       'caKeyPem': caKeyPem,
       'mitmConnect': mitmConnect,
       'preferredPort': port,
-      'replyTo': response.sendPort,
-    });
-    final result = await response.first;
-    response.close();
+    };
+    if (_startFfiOverride != null) {
+      return _startFfiOverride!(arguments).timeout(_ffiTimeout);
+    }
+    final result = await _ffiWorker.request(arguments);
     if (result is Map && result['ok'] == true) {
       return (result['port'] as int?) ?? -1;
     }
@@ -849,26 +905,20 @@ class DohProxyService {
   }
 
   Future<void> _callFfiStop() async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({'cmd': 'stop', 'replyTo': response.sendPort});
-    final result = await response.first;
-    response.close();
-    if (result is Map && result['ok'] != true) {
-      if (result['error'] != null) {
-        NetworkLogger.log('[DOH] FFI 停止失败: ${result['error']}');
-      } else {
-        NetworkLogger.log('[DOH] FFI 停止失败: unknown error');
-      }
+    if (_stopFfiOverride != null) {
+      return _stopFfiOverride!().timeout(_ffiTimeout);
+    }
+    final result = await _ffiWorker.request({'cmd': 'stop'});
+    if (result is! Map || result['ok'] != true) {
+      throw StateError('FFI 停止失败：$result');
     }
   }
 
   Future<Map<String, dynamic>> _callFfiStatus() async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({'cmd': 'status', 'replyTo': response.sendPort});
-    final result = await response.first;
-    response.close();
+    if (_statusFfiOverride != null) {
+      return _statusFfiOverride!().timeout(_ffiTimeout);
+    }
+    final result = await _ffiWorker.request({'cmd': 'status'});
     if (result is Map<String, dynamic>) return result;
     return {'ok': false};
   }
@@ -877,16 +927,11 @@ class DohProxyService {
     String host,
     String dohServer,
   ) async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({
+    final result = await _ffiWorker.request({
       'cmd': 'lookup_ech',
       'host': host,
       'dohServer': dohServer,
-      'replyTo': response.sendPort,
     });
-    final result = await response.first;
-    response.close();
     if (result is Map && result['ok'] == true && result['data'] is Uint8List) {
       return result['data'] as Uint8List;
     }
@@ -898,17 +943,12 @@ class DohProxyService {
     String dohServer, {
     required bool preferIpv6,
   }) async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({
+    final result = await _ffiWorker.request({
       'cmd': 'lookup_ip',
       'host': host,
       'dohServer': dohServer,
       'preferIpv6': preferIpv6,
-      'replyTo': response.sendPort,
     });
-    final result = await response.first;
-    response.close();
     if (result is Map && result['ok'] == true && result['data'] is List) {
       return (result['data'] as List)
           .map((value) => value.toString())
@@ -925,19 +965,14 @@ class DohProxyService {
     required bool preferIpv6,
     required bool forceRefresh,
   }) async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({
+    final result = await _ffiWorker.request({
       'cmd': 'lookup_host',
       'host': host,
       'dohServer': dohServer,
       'dohServerEch': dohServerEch,
       'preferIpv6': preferIpv6,
       'forceRefresh': forceRefresh,
-      'replyTo': response.sendPort,
     });
-    final result = await response.first;
-    response.close();
     if (result is Map && result['ok'] == true && result['data'] is Map) {
       final data = (result['data'] as Map).cast<String, dynamic>();
       final ips = ((data['ips'] as List?) ?? const [])
@@ -956,20 +991,12 @@ class DohProxyService {
   }
 
   Future<bool> _callFfiClearDnsCache() async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({'cmd': 'clear_dns_cache', 'replyTo': response.sendPort});
-    final result = await response.first;
-    response.close();
+    final result = await _ffiWorker.request({'cmd': 'clear_dns_cache'});
     return result is Map && result['ok'] == true;
   }
 
   Future<DohDnsCacheStats?> _callFfiDnsCacheStats() async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({'cmd': 'dns_cache_stats', 'replyTo': response.sendPort});
-    final result = await response.first;
-    response.close();
+    final result = await _ffiWorker.request({'cmd': 'dns_cache_stats'});
     if (result is Map && result['ok'] == true && result['data'] is Map) {
       return DohDnsCacheStats.fromJson(
         (result['data'] as Map).cast<String, dynamic>(),
@@ -979,11 +1006,7 @@ class DohProxyService {
   }
 
   Future<List<DohDnsCacheRecord>?> _callFfiDnsCacheRecords() async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({'cmd': 'dns_cache_records', 'replyTo': response.sendPort});
-    final result = await response.first;
-    response.close();
+    final result = await _ffiWorker.request({'cmd': 'dns_cache_records'});
     if (result is Map && result['ok'] == true && result['records'] is List) {
       return (result['records'] as List)
           .whereType<Map>()
@@ -1004,19 +1027,14 @@ class DohProxyService {
     required bool preferIpv6,
     required String ip,
   }) async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({
+    final result = await _ffiWorker.request({
       'cmd': 'record_host_success',
       'host': host,
       'dohServer': dohServer,
       'dohServerEch': dohServerEch,
       'preferIpv6': preferIpv6,
       'ip': ip,
-      'replyTo': response.sendPort,
     });
-    final result = await response.first;
-    response.close();
     return result is Map && result['ok'] == true;
   }
 
@@ -1026,32 +1044,34 @@ class DohProxyService {
     required String? dohServerEch,
     required bool preferIpv6,
   }) async {
-    final sendPort = await _ensureFfiIsolate();
-    final response = ReceivePort();
-    sendPort.send({
+    final result = await _ffiWorker.request({
       'cmd': 'clear_preferred_host_ip',
       'host': host,
       'dohServer': dohServer,
       'dohServerEch': dohServerEch,
       'preferIpv6': preferIpv6,
-      'replyTo': response.sendPort,
     });
-    final result = await response.first;
-    response.close();
     return result is Map && result['ok'] == true;
   }
 
-  Future<void> _ensureFfiStopped() async {
+  Future<void> _ensureFfiStopped({bool requireStopped = false}) async {
     const timeout = Duration(seconds: 1);
     const interval = Duration(milliseconds: 50);
-    final start = DateTime.now();
-    while (DateTime.now().difference(start) < timeout) {
+    final elapsed = Stopwatch()..start();
+    while (elapsed.elapsed < timeout) {
       final status = await _callFfiStatus();
-      final running = status['running'] as bool? ?? false;
-      if (!running) return;
+      if (status['ok'] == true && status['running'] == false) {
+        _ffiStateUncertain = false;
+        return;
+      }
+      if (requireStopped &&
+          (status['ok'] != true || status['running'] is! bool)) {
+        throw StateError('无法确认代理已停止');
+      }
       await Future<void>.delayed(interval);
     }
     NetworkLogger.log('[DOH] FFI 停止超时，可能仍占用端口');
+    if (requireStopped) throw StateError('代理停止超时，未更换 CA');
   }
 
   String? _buildUpstreamSignature({
@@ -1073,15 +1093,6 @@ class DohProxyService {
       'password': password ?? '',
       'cipher': cipher ?? '',
     });
-  }
-
-  Future<SendPort> _ensureFfiIsolate() async {
-    if (_ffiSendPort != null) return _ffiSendPort!;
-    final readyPort = ReceivePort();
-    _ffiIsolate = await Isolate.spawn(_ffiIsolateEntry, readyPort.sendPort);
-    _ffiSendPort = await readyPort.first as SendPort;
-    readyPort.close();
-    return _ffiSendPort!;
   }
 }
 
@@ -1168,23 +1179,9 @@ void _ffiIsolateEntry(SendPort mainSendPort) {
             );
           }
           if (resultPort <= 0) {
-            // Rust 内部只等 200ms 就检查端口，老设备可能不够
-            // 在 Dart 侧延迟重试，最多再等 1 秒
-            for (var i = 0; i < 5; i++) {
-              sleep(const Duration(milliseconds: 200));
-              if (DohProxyFfi.instance.isRunning()) {
-                final runningPort = DohProxyFfi.instance.getPort();
-                if (runningPort > 0) {
-                  replyTo.send({'ok': true, 'port': runningPort});
-                  return;
-                }
-              }
-            }
-            // 重试后仍失败，构建诊断信息
             final details = StringBuffer('Rust 代理启动返回 $resultPort');
             details.write('，端口=$portValue');
             if (dohServer != null) details.write('，DoH=$dohServer');
-            details.write('，延迟重试后仍未就绪');
             replyTo.send({'ok': false, 'error': details.toString()});
           } else {
             replyTo.send({'ok': true, 'port': resultPort});

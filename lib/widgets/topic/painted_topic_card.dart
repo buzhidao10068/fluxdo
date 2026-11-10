@@ -8,7 +8,6 @@ import '../../services/discourse_cache_manager.dart';
 import '../../services/emoji_handler.dart';
 import '../../utils/relative_time_clock.dart';
 import '../common/animated_avatar_overlay.dart';
-import '../common/smart_avatar.dart' show isSquareAvatarUrl;
 import 'topic_card.dart' show TopicCardInteractiveSurface;
 import 'topic_card_layout.dart';
 
@@ -282,16 +281,8 @@ class _RenderTopicCard extends RenderBox
             );
       if (avatar != null) {
         canvas.save();
-        // linux.do 站点定制:个别账号头像方形化,画布直绘不走 SmartAvatar,
-        // 得同一份 isSquareAvatarUrl 判断,不然图是方的、这里裁切还是圆的。
-        final clipPath = isSquareAvatarUrl(l.avatarUrl)
-            ? (Path()..addRRect(
-                RRect.fromRectAndRadius(
-                  avatarRect,
-                  Radius.circular(avatarRect.shortestSide * 0.1),
-                ),
-              ))
-            : (Path()..addOval(avatarRect));
+        // 画布直绘与 SmartAvatar 保持相同的圆形裁切。
+        final clipPath = Path()..addOval(avatarRect);
         canvas.clipPath(clipPath);
         canvas.drawImageRect(
           avatar,

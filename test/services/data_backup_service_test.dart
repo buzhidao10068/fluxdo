@@ -360,6 +360,8 @@ void main() {
         'cronet_has_fallen_back',
         'vpn_suppressed_doh',
         'per_device_cert_installed',
+        'per_device_cert_installed_nodeloc_v1',
+        'per_device_cert_installed_nodeloc_sha256_v2',
         'cert_use_per_device',
         'window_x',
         // 一次性标记

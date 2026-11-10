@@ -4,8 +4,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
+import 'app_directories.dart';
 
 import '../constants.dart';
 import '../l10n/s.dart';
@@ -71,7 +72,7 @@ class ShareUtils {
         _ => 'image/$ext',
       };
 
-  /// 分享/导出用的中转文件目录名（在 `getTemporaryDirectory()` 下）。
+  /// 分享/导出用的中转文件目录名（在 `getAppTemporaryDirectory()` 下）。
   static const String _kOutboxDir = 'outbox';
 
   /// 保留时长：超过这个时间的中转文件在下次写入时被清掉。
@@ -83,7 +84,7 @@ class ShareUtils {
   /// 在 temp 根目录与 temp/share 下只增不减；统一收进一个目录并在每次写入前
   /// 清掉过期件，避免长期占着「其它数据」。
   static Future<File> createOutboxFile(String fileName) async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await getAppTemporaryDirectory();
     final dir = Directory(p.join(tempDir.path, _kOutboxDir));
     await dir.create(recursive: true);
     await _pruneOutbox(dir);

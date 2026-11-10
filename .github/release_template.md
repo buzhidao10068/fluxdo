@@ -1,55 +1,15 @@
-<div align=center>
+# NodeLoc Android 候选说明
 
-[![Release Downloads](https://img.shields.io/github/downloads/lingyan000/fluxdo/vVERSION/total?style=flat-square&logo=github)](https://img.shields.io/github/downloads/lingyan000/fluxdo/vVERSION/)
+仅 Android 9（API 28）及以上，arm64-v8a。其他平台不在本阶段交付范围。
 
-</div>
+发布前填写实际证据；未完成真机及正式签名验收时保持候选状态：
 
-**Download based on your device:**
+- 主仓 / Rust 提交、Android Delivery 运行链接：待填写
+- APK 文件、SHA-256、签名证书 SHA-256：待填写
+- 目标设备型号 / Android 版本：待填写
+- 登录 → 浏览 → 回复 → 上传 → 重启恢复 → 退出重登：待验收
+- 安装升级、原版共存、权限、回调、代理与信任：待验收
+- HTTPS App Links：未启用
+- NodeLoc 实机截图：待补充
 
-<div align=left>
-<table>
-    <thead align=left>
-        <tr>
-            <th>OS</th>
-            <th>Download</th>
-        </tr>
-    </thead>
-    <tbody align=left>
-        <tr>
-        <td>Android</td>
-            <td>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-arm64-v8a.apk"><img src="https://img.shields.io/badge/APK-ARMv8-168039.svg?logo=android"></a><br>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-armeabi-v7a.apk"><img src="https://img.shields.io/badge/APK-ARMv7-45bf55.svg?logo=android"></a><br>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-x86_64.apk"><img src="https://img.shields.io/badge/APK-x64-96ed89.svg?logo=android"></a>
-            </td>
-        </tr>
-        <tr>
-        <td>iOS</td>
-            <td>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-unsigned.ipa"><img src="https://img.shields.io/badge/IPA-Unsigned-0c6bff.svg?logo=apple"></a>
-            </td>
-        </tr>
-        <tr>
-        <td>macOS</td>
-            <td>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-macos-arm64.dmg"><img src="https://img.shields.io/badge/DMG-Apple_Silicon-333333.svg?logo=apple"></a><br>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-macos-x86_64.dmg"><img src="https://img.shields.io/badge/DMG-Intel-666666.svg?logo=apple"></a>
-            </td>
-        </tr>
-        <tr>
-        <td>Windows</td>
-            <td>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-windows-x86_64-setup.exe"><img src="https://img.shields.io/badge/Setup-x64-0078D4.svg?logo=windows"></a><br>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-windows-x86_64.zip"><img src="https://img.shields.io/badge/ZIP-x64-2d7d9a.svg?logo=windows"></a>
-            </td>
-        </tr>
-        <tr>
-        <td>Linux</td>
-            <td>
-                <a href="https://github.com/lingyan000/fluxdo/releases/download/vVERSION/fluxdo-linux-x86_64.flatpak"><img src="https://img.shields.io/badge/Flatpak-x64-1793D1.svg?logo=linux"></a>
-            </td>
-        </tr>
-    </tbody>
-</table>
-
-</div>
+基于 Lingyan000/FluxDO，遵循 GPL-3.0。本模板不会触发发布。

@@ -51,21 +51,11 @@ import Security
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassCertificate,
             kSecValueRef as String: cert,
-            kSecAttrLabel as String: "DOH Proxy CA",
+            kSecAttrLabel as String: "FluxDO NodeLoc DOH Proxy CA",
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-        if addStatus == errSecDuplicateItem {
-            // 旧证书存在，替换
-            SecItemDelete([
-                kSecClass as String: kSecClassCertificate,
-                kSecAttrLabel as String: "DOH Proxy CA",
-            ] as CFDictionary)
-            let retryStatus = SecItemAdd(addQuery as CFDictionary, nil)
-            if retryStatus != errSecSuccess {
-                NSLog("[DohProxyCertHandler] Failed to replace CA: %d", retryStatus)
-                return false
-            }
-        } else if addStatus != errSecSuccess {
+        // 相同证书已存在时直接重试设置信任；不得按标签删除其他应用的 CA。
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
             NSLog("[DohProxyCertHandler] Failed to add CA: %d", addStatus)
             return false
         }

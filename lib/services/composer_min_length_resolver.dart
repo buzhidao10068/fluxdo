@@ -9,7 +9,7 @@ import 'preloaded_data_service.dart';
 ///
 /// 分三层，对齐 Discourse：
 /// 1. 基础值：私信 / 首帖 / 普通回复各自的站点设置（[PreloadedDataService]
-///    内部已含 linux.do 的 `premium_min_post_length` 用户专属优惠）
+///    NodeLoc 普通回复直接使用 `min_post_length = 1`，无需额外门槛）
 /// 2. 站点插件改写：如 warden 按分类抬高下限；但服务端已经针对当前用户
 ///    下发的专属回复下限拥有更高优先级，不能再被通用分类规则覆盖
 /// 3. 结果即为编辑器与提交校验共用的下限
@@ -46,7 +46,7 @@ class ComposerMinLengthResolver {
         ? await preloaded.getMinFirstPostLength()
         : await preloaded.getMinPostLength();
 
-    // linux.do 会把 premium 等特殊分组针对“当前用户”计算后的回复下限
+    // 部分站点会把特殊分组针对“当前用户”计算后的回复下限
     // 序列化到 currentUser。getMinPostLength() 已使用该值作为 base；这里再把
     // “这是用户专属值”这一事实传给站点插件，避免 warden 用分类的通用 16 字
     // 把 premium 的 4 字优惠错误覆盖。首帖/私信不使用该字段。

@@ -7,14 +7,15 @@ import 'package:crypto/crypto.dart' show sha1;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mime/mime.dart';
-import 'package:path_provider/path_provider.dart';
+
+import '../utils/app_directories.dart';
 
 import 'network/discourse_dio.dart';
 import '../utils/webm_opus_to_caf.dart';
 
 /// 「改名上传」媒体兼容服务。
 ///
-/// linux.do 等站点用扩展名白名单限制上传类型,用户常把 mp4/mp3 改后缀
+/// 历史站点用扩展名白名单限制上传类型,用户常把 mp4/mp3 改后缀
 /// (如 `.xz`)绕过 —— 文件内容是合法媒体,但 URL 扩展名与 CDN 返回的
 /// Content-Type(application/x-xz + attachment)全是错的。
 ///
@@ -30,6 +31,7 @@ import '../utils/webm_opus_to_caf.dart';
 ///
 /// 触发条件完全由数据派生(URL 扩展名映射不到媒体 mime 才探测),不做
 /// 站点/后缀白名单;普通 .mp4/.mp3 源零开销直通。
+/// NodeLoc 原生允许常见音视频扩展名，新上传不需此转换；历史改名媒体仍需保留兼容。
 class MediaCompatService {
   MediaCompatService._();
 
@@ -71,7 +73,8 @@ class MediaCompatService {
   /// Android(ExoPlayer)/web(浏览器)按内容嗅探无需处理;
   /// Windows/Linux 当前无 video_player 后端,处理了也没有播放器可用。
   bool needsProbe(String url) {
-    final isAvPlatform = debugAvPlatformOverride ??
+    final isAvPlatform =
+        debugAvPlatformOverride ??
         (!kIsWeb && (Platform.isIOS || Platform.isMacOS));
     if (!isAvPlatform) return false;
     final uri = Uri.tryParse(url);
@@ -112,8 +115,9 @@ class MediaCompatService {
       // 负缓存原 URL 走播放器错误链兜底。
       if (mime == 'audio/weba') {
         final caf = await _remuxWebmOpusToCaf(url);
-        return _resolved[url] =
-            caf != null ? Uri.file(caf.path).toString() : url;
+        return _resolved[url] = caf != null
+            ? Uri.file(caf.path).toString()
+            : url;
       }
       final file = await _localize(url, extensionForMimeType(mime!));
       return _resolved[url] = Uri.file(file.path).toString();
@@ -265,30 +269,32 @@ class MediaCompatService {
   }
 
   Future<Directory> _cacheDir() => _dirFuture ??= () async {
-        final base = await getTemporaryDirectory();
-        final dir = Directory('${base.path}/$_dirName');
-        await dir.create(recursive: true);
-        _sweepStale(dir);
-        return dir;
-      }();
+    final base = await getAppTemporaryDirectory();
+    final dir = Directory('${base.path}/$_dirName');
+    await dir.create(recursive: true);
+    _sweepStale(dir);
+    return dir;
+  }();
 
   /// 惰性清理:30 天前的本地副本(含中断残留的 .part)删除,
   /// 防磁盘无界增长;目录本身在 Temporary 下,系统清缓存也能回收。
   void _sweepStale(Directory dir) {
     if (_swept) return;
     _swept = true;
-    unawaited(Future(() async {
-      try {
-        final cutoff = DateTime.now().subtract(const Duration(days: 30));
-        await for (final e in dir.list()) {
-          if (e is! File) continue;
-          if ((await e.stat()).modified.isBefore(cutoff)) {
-            await e.delete();
+    unawaited(
+      Future(() async {
+        try {
+          final cutoff = DateTime.now().subtract(const Duration(days: 30));
+          await for (final e in dir.list()) {
+            if (e is! File) continue;
+            if ((await e.stat()).modified.isBefore(cutoff)) {
+              await e.delete();
+            }
           }
+        } catch (_) {
+          // 清理失败无碍,下次会话再试
         }
-      } catch (_) {
-        // 清理失败无碍,下次会话再试
-      }
-    }));
+      }),
+    );
   }
 }

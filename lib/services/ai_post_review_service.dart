@@ -82,7 +82,8 @@ class AiPostReviewService {
        _dio = dio,
        _guidelinesFetcher = guidelinesFetcher;
 
-  static const guidelinesUrl = '${AppConstants.baseUrl}/guidelines';
+  /// 社区准则地址由 [AppConstants.baseUrl] 派生，换站自动生效。
+  static String get guidelinesUrl => '${AppConstants.baseUrl}/guidelines';
   static const _guidelinesCacheKey = 'ai_post_review_guidelines_cache';
   static const _guidelinesCacheUpdatedAtKey =
       'ai_post_review_guidelines_cache_updated_at';
@@ -160,7 +161,7 @@ class AiPostReviewService {
         return _GuidelinesLoadResult(text: cached, usedCache: true);
       }
       throw AiPostReviewException(
-        '无法获取 Linux.do 社区准则，也没有可用缓存。',
+        '无法获取 NodeLoc 社区准则，也没有可用缓存。',
         details: '$error\n$stackTrace',
       );
     }
@@ -208,7 +209,7 @@ class AiPostReviewService {
   @visibleForTesting
   static String buildSystemPrompt(String guidelines) {
     return '''
-你是 Linux.do 社区发帖前的本地 AI 审核助手。你的任务是根据社区准则帮助用户发现可能需要修改的地方。
+你是 NodeLoc 社区发帖前的本地 AI 审核助手。你的任务是根据社区准则帮助用户发现可能需要修改的地方。
 
 硬性要求，必须遵守：
 1. 只输出整体优先级和 1-3 条建议修改方向，不得提供完整改写内容。
@@ -276,9 +277,10 @@ ${request.content.trim()}
     final cleaned = _stripJsonFence(raw);
     try {
       final decoded = jsonDecode(cleaned) as Map<String, dynamic>;
-      final suggestions = _readStringList(
-        decoded['suggestions'],
-      ).map(_hideLikelyFullRewrite).take(3).toList(growable: false);
+      final suggestions = _readStringList(decoded['suggestions'])
+          .map(_hideLikelyFullRewrite)
+          .take(3)
+          .toList(growable: false);
       return AiPostReviewResult(
         level: _parseLevel(decoded['level']),
         suggestions: suggestions.isEmpty

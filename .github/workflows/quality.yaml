@@ -1,7 +1,7 @@
 name: Quality Gate
 
-# 覆盖 Android 站点身份、生态清理、P1 定制层和 P2 登录链路。
-# Rust 检查只覆盖主仓 gitlink 对应的源码，原生产物交付状态见 P1 实施记录。
+# 覆盖 Android 站点身份、生态清理、P1 定制层、P2 登录链路和 P4 参数文案。
+# Rust 检查只覆盖主仓 gitlink 对应的源码，APK 原生产物由 Android Delivery 核验。
 #
 # 背景：原 build.yaml 只在 `v*` tag 触发，且全流程没有 flutter analyze /
 # flutter test / cargo test 步骤。历史上多次「该改而没改」的问题因此直接
@@ -16,10 +16,8 @@ name: Quality Gate
 # 分级说明（阻塞 / 非阻塞）：
 # - 阻塞项：本地化生成 + flutter analyze + 各迁移步骤定向测试 + cargo test。
 # - 非阻塞项：全量 flutter test。
-#   上游基线本身有 245 个失败（其中 test/widgets/markdown_editor/ 单独跑就有
-#   145 个真实失败，另有大量跨目录并发污染导致的失败），与站点身份无关。
-#   直接设为阻塞会让每个 PR 都红，失去门禁意义；因此先以非阻塞方式持续
-#   记录基线，待基线修好后改为 continue-on-error: false。
+#   每次交付保存当前失败清单并判定影响，不引用历史失败数作为放行依据。
+#   Android 核心链路及本次引入的回归仍须解决。
 
 on:
   push:
@@ -27,12 +25,13 @@ on:
       - '**'
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 env:
   FLUTTER_VERSION: '3.47.4'
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: ${{ github.workflow }}-quality-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -78,6 +77,7 @@ jobs:
             test/services/clipboard_topic_link_service_test.dart \
             test/utils/url_helper_test.dart \
             test/platform/android_site_identity_test.dart \
+            test/platform/url_scheme_registration_test.dart \
             test/config/sites/nodeloc_customization_test.dart \
             test/utils/link_security_test.dart \
             test/utils/link_launcher_test.dart \
@@ -94,6 +94,21 @@ jobs:
             test/providers/bookmarks_provider_test.dart \
             test/plugins/warden_user_specific_min_length_test.dart \
             test/widgets/nodeloc_ecosystem_test.dart \
+            test/widgets/markdown_editor/media_upload_helper_test.dart \
+            test/services/nodeloc_media_upload_test.dart \
+            test/services/media_compressor_test.dart \
+            test/services/media_compat_service_test.dart \
+            test/services/nodeloc_composer_min_length_test.dart \
+            test/services/ai_post_review_service_test.dart \
+            test/pages/parallel_pages_test.dart \
+            test/platform/nodeloc_application_identity_test.dart \
+            test/services/app_data_isolation_test.dart \
+            test/services/per_device_cert_service_test.dart \
+            test/services/device_ca_rotation_test.dart \
+            test/services/doh_proxy_ca_lifecycle_test.dart \
+            test/services/ffi_worker_test.dart \
+            test/services/network/adapters/network_http_adapter_ca_test.dart \
+            test/services/storage/system_secret_store_test.dart \
             test/services/data_backup_service_test.dart \
             test/services/discourse_login_test.dart \
             test/widgets/auth/nodeloc_login_test.dart \
@@ -119,6 +134,7 @@ jobs:
             test/services/clipboard_topic_link_service_test.dart \
             test/utils/url_helper_test.dart \
             test/platform/android_site_identity_test.dart \
+            test/platform/url_scheme_registration_test.dart \
             test/services/network/doh/ech_dns_policy_test.dart \
             test/services/network/webview/webview_adapter_settings_service_test.dart
 
@@ -167,6 +183,26 @@ jobs:
             test/services/network/interceptors/cf_challenge_interceptor_test.dart \
             packages/enhanced_cookie_jar/test
 
+      # 第 5 步 P4：动态限额、原扩展名上传、旧媒体播放、分场景字数与独立应用身份。
+      - name: flutter test (NodeLoc parameters and branding)
+        run: |
+          flutter test --no-pub \
+            test/widgets/markdown_editor/media_upload_helper_test.dart \
+            test/services/nodeloc_media_upload_test.dart \
+            test/services/media_compressor_test.dart \
+            test/services/media_compat_service_test.dart \
+            test/services/nodeloc_composer_min_length_test.dart \
+            test/services/ai_post_review_service_test.dart \
+            test/pages/parallel_pages_test.dart \
+            test/services/app_data_isolation_test.dart \
+            test/services/per_device_cert_service_test.dart \
+            test/services/device_ca_rotation_test.dart \
+            test/services/doh_proxy_ca_lifecycle_test.dart \
+            test/services/ffi_worker_test.dart \
+            test/services/network/adapters/network_http_adapter_ca_test.dart \
+            test/services/storage/system_secret_store_test.dart \
+            test/platform/nodeloc_application_identity_test.dart
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -178,7 +214,17 @@ jobs:
       # 全量测试：非阻塞，仅记录基线漂移（见文件头说明）。
       - name: flutter test (full, non-blocking)
         continue-on-error: true
-        run: flutter test --no-pub
+        run: |
+          mkdir -p build/quality
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee build/quality/full-test.log
+
+      - name: Upload full test result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-full-test-${{ github.job }}-${{ github.run_attempt }}
+          path: build/quality/
 
   rust:
     name: Rust (doh_proxy) 单元测试
@@ -192,19 +238,18 @@ jobs:
           submodules: recursive
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.1
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake pkg-config libssl-dev
 
-      # 保留已有检查。本 job 只验证主仓指针指向的源码；子模块修复的
-      # 远端可获取性、主仓指针更新仍需在 P1 交付时单独完成。
+      # 保留已有检查。本 job 只验证主仓指针指向的源码；Android Delivery 另行核验 APK。
       - name: cargo test (ech)
         working-directory: core/doh_proxy
-        run: cargo test --features ech --lib
+        run: cargo test --locked --features ech --lib
 
       - name: cargo test (default)
         working-directory: core/doh_proxy
-        run: cargo test --lib
+        run: cargo test --locked --lib

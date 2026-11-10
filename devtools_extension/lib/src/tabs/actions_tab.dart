@@ -14,7 +14,7 @@ class ActionsTab extends StatefulWidget {
 
 class _ActionsTabState extends State<ActionsTab> {
   final _urlController =
-      TextEditingController(text: 'https://linux.do');
+      TextEditingController(text: 'https://www.nodeloc.com');
   String _selectedName = '_t';
   String _selectedIntent = 'ensureUnique';
   String? _lastResult;

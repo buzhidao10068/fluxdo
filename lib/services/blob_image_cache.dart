@@ -7,8 +7,9 @@ import 'dart:ui' as ui;
 import 'package:crypto/crypto.dart' show md5;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../utils/app_directories.dart';
 
 import 'dio_http_client.dart';
 
@@ -92,7 +93,7 @@ class BlobImageCache {
 
   static Future<Directory> _ensureRoot() =>
       _rootFuture ??= (() async {
-        final tmp = await getTemporaryDirectory();
+        final tmp = await getAppTemporaryDirectory();
         final dir = Directory('${tmp.path}/$dirName');
         await dir.create(recursive: true);
         _root = dir;

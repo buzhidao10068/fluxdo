@@ -16,7 +16,7 @@
 	<true/>
 	<key>com.apple.security.keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.github.lingyan000.fluxdo</string>
+		<string>$(AppIdentifierPrefix)com.buzhidao10068.fluxdo</string>
 	</array>
 </dict>
 </plist>

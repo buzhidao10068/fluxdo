@@ -3,8 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
 import 'package:cross_file/cross_file.dart';
+
+import 'app_directories.dart';
 import 'dart:io';
 import 'image_save_utils.dart';
 import 'share_utils.dart';
@@ -143,7 +144,7 @@ class ScreenshotUtils {
   static Future<void> shareImage(Uint8List bytes, {String? filename}) async {
     try {
       // 创建临时文件
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final name = filename ?? 'fluxdo_share_${DateTime.now().millisecondsSinceEpoch}';
       final file = File('${tempDir.path}/$name.png');
       await file.writeAsBytes(bytes);

@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:gal/gal.dart';
 import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import 'app_directories.dart';
 
 import '../l10n/s.dart';
 import '../services/toast_service.dart';
@@ -49,7 +50,7 @@ abstract final class ImageSaveUtils {
   /// 桌面：写临时文件再走另存为对话框（失败提示由 ShareUtils 给出）。
   static Future<bool> _saveAsFile(Uint8List bytes, String fileName) async {
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final file = File(p.join(tempDir.path, fileName));
       await file.writeAsBytes(bytes);
       final ext = p.extension(fileName).replaceFirst('.', '');
@@ -77,7 +78,7 @@ abstract final class ImageSaveUtils {
         // Android 的 bytes 接口依赖 Commons Imaging 猜格式，无法识别
         // 部分动图的实际容器（如 .gif URL 返回 AVIF）。文件接口直接复制
         // 原始数据，使用按内容确定的后缀，保留全部动画帧。
-        final tempDir = await getTemporaryDirectory();
+        final tempDir = await getAppTemporaryDirectory();
         stagingDir = await tempDir.createTemp('fluxdo_image_save_');
         final file = File(p.join(stagingDir.path, fileName));
         await file.writeAsBytes(bytes);

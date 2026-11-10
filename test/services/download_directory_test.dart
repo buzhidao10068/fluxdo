@@ -298,7 +298,10 @@ void main() {
         stage == '创建目录' ? 'createDirectory' : 'reserveFile',
       );
       expect(failure['osErrorCode'], stage == '创建目录' ? isNotNull : 1);
-      expect(failure['directory'], endsWith('Documents/Downloads'));
+      expect(
+        failure['directory'],
+        p.join(pathProvider.documentsPath, 'Downloads'),
+      );
       expect(failure['stackTrace'], isNotEmpty);
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();

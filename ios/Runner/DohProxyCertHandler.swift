@@ -18,7 +18,7 @@ import WebKit
     private var caCertRef: SecCertificate?
 
     /// 从 PEM 字符串加载代理 CA 证书，首次调用时执行 swizzle
-    func setCaCertPem(_ pem: String) {
+    func setCaCertPem(_ pem: String) -> Bool {
         let base64 = pem
             .components(separatedBy: "\n")
             .filter { line in
@@ -28,15 +28,15 @@ import WebKit
             .joined()
         guard let derData = Data(base64Encoded: base64),
               let certRef = SecCertificateCreateWithData(nil, derData as CFData) else {
-            return
+            return false
         }
         caCertDerData = derData
         caCertRef = certRef
 
         if !DohProxyCertHandler.isSwizzled {
-            DohProxyCertHandler.isSwizzled = true
-            performSwizzle()
+            DohProxyCertHandler.isSwizzled = performSwizzle()
         }
+        return DohProxyCertHandler.isSwizzled
     }
 
     func clearCaCert() {
@@ -46,7 +46,7 @@ import WebKit
 
     // MARK: - Swizzle
 
-    private func performSwizzle() {
+    private func performSwizzle() -> Bool {
         let selector = NSSelectorFromString(
             "webView:didReceiveAuthenticationChallenge:completionHandler:"
         )
@@ -82,7 +82,7 @@ import WebKit
 
         guard let cls = targetClass,
               let originalMethod = class_getInstanceMethod(cls, selector) else {
-            return
+            return false
         }
 
         DohProxyCertHandler.originalImp = method_getImplementation(originalMethod)
@@ -125,5 +125,6 @@ import WebKit
         }
 
         method_setImplementation(originalMethod, imp_implementationWithBlock(block))
+        return true
     }
 }

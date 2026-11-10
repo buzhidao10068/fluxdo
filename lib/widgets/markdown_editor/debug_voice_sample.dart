@@ -10,7 +10,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import '../../utils/app_directories.dart';
 
 /// 合成 PCM16 mono WAV 字节(RIFF/fmt/data)。纯函数,可单测。
 ///
@@ -67,7 +68,7 @@ Uint8List buildTestVoiceWav({
 Future<String> synthesizeTestVoiceWav({
   Duration duration = const Duration(seconds: 8),
 }) async {
-  final dir = await getTemporaryDirectory();
+  final dir = await getAppTemporaryDirectory();
   final path = p.join(
     dir.path,
     'voice_debug_${DateTime.now().millisecondsSinceEpoch}.wav',

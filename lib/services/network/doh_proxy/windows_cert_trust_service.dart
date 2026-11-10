@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:path_provider/path_provider.dart';
+
+import '../../../utils/app_directories.dart';
 
 import 'cert_preference_service.dart';
 import 'per_device_cert_service.dart';
@@ -83,7 +84,7 @@ class WindowsCertTrustService {
     if (pem == null) return false;
     File? tempFile;
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       tempFile = File(
         '${tempDir.path}${Platform.pathSeparator}fluxdo_doh_ca.crt',
       );

@@ -1,9 +1,8 @@
 /// 语音消息录音面板(底部弹层):录制 → 试听/重录 → 发送。
 ///
 /// 录音规格:AAC-LC 32kbps / 16kHz / 单声道(语音清晰度足够;10 分钟
-/// 上限 ≈ 2.4MB,天然低于站点 4MB 上传上限,无需压缩)。产物 `.m4a`
-/// 经改名 `.xz` 上传,标签 type 写 `audio/mp4`(AVFoundation / 浏览器
-/// 通吃)。
+/// 上限约 2.4 MB）。产物 `.m4a` 按站点附件限额检查并上传，
+/// NodeLoc 保留原扩展名，标签 type 写 `audio/mp4`。
 library;
 
 import 'dart:async';
@@ -14,7 +13,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import '../../utils/app_directories.dart';
+
 import 'package:record/record.dart';
 
 import '../../services/media_transcoder/media_transcoder.dart';
@@ -39,7 +40,7 @@ Future<String?> showVoiceRecorderSheet(BuildContext context) {
   );
 }
 
-/// 录制时长上限(32kbps 下 ≈ 2.4MB,留足 4MB 余量)。
+/// 录制时长上限（32 kbps 下约 2.4 MB，发送前仍检查站点附件限额）。
 const _kMaxRecordDuration = Duration(minutes: 10);
 
 class _VoiceRecorderSheet extends StatefulWidget {
@@ -93,7 +94,7 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
       if (mounted) setState(() => _error = '录音初始化失败:$e');
       return;
     }
-    final dir = await getTemporaryDirectory();
+    final dir = await getAppTemporaryDirectory();
     final path = p.join(
       dir.path,
       'voice_${DateTime.now().millisecondsSinceEpoch}.m4a',
@@ -115,10 +116,10 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
     _ampSub = recorder
         .onAmplitudeChanged(const Duration(milliseconds: 120))
         .listen((a) {
-      // dBFS(约 -45..0)→ 0..1
-      final norm = ((a.current + 45) / 45).clamp(0.0, 1.0);
-      if (mounted) setState(() => _amplitude = norm);
-    });
+          // dBFS(约 -45..0)→ 0..1
+          final norm = ((a.current + 45) / 45).clamp(0.0, 1.0);
+          if (mounted) setState(() => _amplitude = norm);
+        });
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _elapsed += const Duration(seconds: 1));
@@ -168,14 +169,16 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
     if (transcoder != null && await transcoder.ensureReady() == null) {
       try {
         final m4a = path.replaceFirst(RegExp(r'\.wav$'), '.m4a');
-        final ok = await transcoder.transcode(TranscodeSpec(
-          input: path,
-          output: m4a,
-          audioOnly: true,
-          audioBitrate: 32000,
-          audioSampleRate: 16000,
-          audioChannels: 1,
-        ));
+        final ok = await transcoder.transcode(
+          TranscodeSpec(
+            input: path,
+            output: m4a,
+            audioOnly: true,
+            audioBitrate: 32000,
+            audioSampleRate: 16000,
+            audioChannels: 1,
+          ),
+        );
         if (ok) path = m4a;
       } catch (_) {
         // 转码腿不可用(如热重启后通道缺失):wav 直用
@@ -254,14 +257,18 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
                   _Phase.recording => '录制中…',
                   _Phase.recorded => '试听确认后发送',
                 },
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
-                Text(_error!,
-                    style:
-                        theme.textTheme.bodySmall?.copyWith(color: scheme.error)),
+                Text(
+                  _error!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                ),
               ],
               const SizedBox(height: 20),
               Text(
@@ -277,8 +284,10 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
                   onTap: _phase == _Phase.recording ? _stop : _start,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 120),
-                    width: 76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
-                    height: 76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
+                    width:
+                        76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
+                    height:
+                        76 + (_phase == _Phase.recording ? _amplitude * 14 : 0),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: _phase == _Phase.recording
@@ -304,14 +313,17 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
                     StreamBuilder<PlayerState>(
                       stream: _player?.playerStateStream,
                       builder: (context, snap) {
-                        final playing = (snap.data?.playing ?? false) &&
+                        final playing =
+                            (snap.data?.playing ?? false) &&
                             snap.data?.processingState !=
                                 ProcessingState.completed;
                         return IconButton.filledTonal(
                           iconSize: 32,
-                          icon: Icon(playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded),
+                          icon: Icon(
+                            playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                          ),
                           onPressed: _togglePreview,
                         );
                       },
@@ -322,8 +334,10 @@ class _VoiceRecorderSheetState extends State<_VoiceRecorderSheet> {
                 const SizedBox(height: 10),
                 TextButton.icon(
                   icon: const Icon(Icons.science_outlined, size: 16),
-                  label: const Text('生成测试音频(debug)',
-                      style: TextStyle(fontSize: 12)),
+                  label: const Text(
+                    '生成测试音频(debug)',
+                    style: TextStyle(fontSize: 12),
+                  ),
                   onPressed: _debugSynthesize,
                 ),
               ],

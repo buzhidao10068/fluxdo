@@ -7,8 +7,15 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
-    id("com.google.firebase.crashlytics")
+    id("com.google.gms.google-services") apply false
+    id("com.google.firebase.crashlytics") apply false
+}
+
+// fork 默认不连接上游 Firebase；维护者提供新包名的配置后才可显式启用。
+val enableFirebase = providers.gradleProperty("enableFirebase").orNull == "true"
+if (enableFirebase) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 fun Properties.readNonBlank(name: String): String? =
@@ -44,6 +51,10 @@ val hasReleaseSigning =
     releaseStorePassword != null &&
     releaseStoreFile?.exists() == true
 val releaseBuildSigningName = if (hasReleaseSigning) "release" else "debug"
+// 候选构建必须显式要求正式签名，阻止配置缺失时悄悄回退 debug。
+if (providers.gradleProperty("requireReleaseSigning").orNull == "true" && !hasReleaseSigning) {
+    throw GradleException("候选构建缺少完整的 android/key.properties 或签名文件")
+}
 
 println(
     if (hasReleaseSigning) {
@@ -54,7 +65,7 @@ println(
 )
 
 android {
-    namespace = "com.github.lingyan000.fluxdo"
+    namespace = "com.buzhidao10068.fluxdo"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -65,11 +76,12 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.github.lingyan000.fluxdo"
+        // NodeLoc fork 使用独立应用标识，允许与上游并存。
+        applicationId = "com.buzhidao10068.fluxdo"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 与 tool/project_tasks.dart 中 cargo-ndk --platform 28 保持一致。
+        minSdk = 28
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -92,9 +104,11 @@ android {
             // NDK 符号上传:不开的话 libflutter.so / libapp.so 的 native 崩溃在
             // Crashlytics 里只有裸地址(blameFrame: address: '5148676'),栈帧全空,
             // 完全无法归因 —— 而 native 崩溃正是当前最大头的崩溃来源。
-            configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
-                nativeSymbolUploadEnabled = true
-                unstrippedNativeLibsDir = file("build/intermediates/merged_native_libs/release/out/lib")
+            if (enableFirebase) {
+                configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
+                    nativeSymbolUploadEnabled = true
+                    unstrippedNativeLibsDir = file("build/intermediates/merged_native_libs/release/out/lib")
+                }
             }
         }
 
@@ -156,7 +170,7 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics")
     implementation("org.json:json:20240303")
     implementation("androidx.webkit:webkit:1.15.0")
-    // 媒体转码(压缩到 4MB):Transformer 走系统 MediaCodec 硬编
+    // 媒体转码到站点附件上限以内：Transformer 走系统 MediaCodec 硬编。
     implementation("androidx.media3:media3-transformer:1.10.1")
     implementation("androidx.media3:media3-effect:1.10.1")
     implementation("androidx.media3:media3-common:1.10.1")

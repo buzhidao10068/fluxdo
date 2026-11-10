@@ -5,9 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:app_icons/app_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:m3e_ui/m3e_ui.dart';
+
+import '../../utils/app_directories.dart';
 import '../../providers/preferences_provider.dart';
 import '../../services/discourse/discourse_service.dart';
 import '../../l10n/s.dart';
@@ -204,7 +205,7 @@ class _AiShareImagePreviewState extends ConsumerState<AiShareImagePreview> {
       if (bytes == null) throw Exception(S.current.share_screenshotFailed);
 
       // 保存到临时文件
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final fileName = 'ai_reply_${DateTime.now().millisecondsSinceEpoch}.png';
       final tempFile = File('${tempDir.path}/$fileName');
       await tempFile.writeAsBytes(bytes);

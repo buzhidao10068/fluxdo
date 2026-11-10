@@ -28,7 +28,7 @@ xcrun clang -std=c11 -I "$PLUGIN/native/cxx/quickjs" \
 /tmp/quickjs-smoke "$PWD/$PLUGIN/macos/Frameworks/libquickjs_c_bridge_plugin.dylib"
 
 fvm dart tool/flutterw.dart build macos --debug
-APP_LIB="$PWD/build/macos/Build/Products/Debug/fluxdo.app/Contents/Frameworks/libquickjs_c_bridge_plugin.dylib"
+APP_LIB="$PWD/build/macos/Build/Products/Debug/fluxdo-nodeloc.app/Contents/Frameworks/libquickjs_c_bridge_plugin.dylib"
 # CocoaPods 会按本次应用架构裁剪库，arm64 本机构建只要求 arm64。
 ruby scripts/ci/macos/verify_quickjs.rb "$APP_LIB" arm64
 /tmp/quickjs-smoke "$APP_LIB"

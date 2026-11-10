@@ -611,6 +611,7 @@ Future<void> _prepareAndroidNative(
     '--platform',
     '28',
     'build',
+    '--locked',
     if (mode == _BuildMode.release) '--release',
     '--features',
     'ech',

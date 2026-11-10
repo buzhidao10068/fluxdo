@@ -61,8 +61,7 @@ final List<EditorTool> editorTools = [
     label: (s) => s.toolPanel_attachment,
     action: (t) => t.pickAndUploadFile(),
   ),
-  // 音视频改名上传(.xz 绕站点扩展名白名单,4MB 上限;插 <audio>/<video>
-  // 标签,网页端原生播放)
+  // 音视频按站点附件限额和扩展名策略上传，插入可在网页播放的 HTML 标签。
   EditorTool(
     id: 'media',
     icon: const FaIcon(FontAwesomeIcons.film),

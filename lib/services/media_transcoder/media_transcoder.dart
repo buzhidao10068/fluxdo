@@ -1,4 +1,4 @@
-/// 媒体转码平台抽象(音视频压缩到站点 4MB 上限的执行层)。
+/// 媒体转码平台抽象（将音视频压缩到服务端配置的附件上限以内）。
 ///
 /// 三条实现腿(安装包零/近零增量,见 [[voice-media-upload-pipeline]]):
 /// - iOS/macOS:AVAssetReader/Writer(系统框架,H264 videotoolbox 硬编);

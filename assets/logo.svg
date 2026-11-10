@@ -1,11 +1,6 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-<circle cx="512" cy="512" r="448" fill="#F0F0F0"/>
-<mask id="mask0_0_8" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="91" y="91" width="842" height="842">
-<circle cx="512" cy="512" r="421" fill="white"/>
-</mask>
-<g mask="url(#mask0_0_8)">
-<rect x="91" y="700" width="842" height="233" fill="#FFB003"/>
-<rect x="91" y="324" width="842" height="376" fill="#F0F0F0"/>
-<rect x="91" y="91" width="842" height="233" fill="#1C1C1E"/>
-</g>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <title>FluxDO NodeLoc unofficial client</title>
+  <rect width="1024" height="1024" rx="224" fill="#142A38"/>
+  <path d="M320 704V320L704 704V320" fill="none" stroke="#F0FDFA" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#2DD4BF"><circle cx="320" cy="704" r="64"/><circle cx="320" cy="320" r="64"/><circle cx="704" cy="704" r="64"/><circle cx="704" cy="320" r="64"/></g>
 </svg>

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../utils/app_directories.dart';
 import 'secret_store.dart';
 
 /// 基于系统 Keychain / Keystore / Credential Store 的统一敏感数据存储。
@@ -13,7 +14,10 @@ class SystemSecretStore implements SecretStore {
     : _secureStorage =
           secureStorage ??
           const FlutterSecureStorage(
-            mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+            mOptions: MacOsOptions(
+              accountName: appStorageNamespace,
+              usesDataProtectionKeychain: false,
+            ),
           );
 
   static final SystemSecretStore instance = SystemSecretStore();

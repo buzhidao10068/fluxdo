@@ -20,7 +20,7 @@ Widget _layoutProbe(Size size) {
 }
 
 void main() {
-  test('搜索框标准化无协议的 L 站链接', () {
+  test('搜索框识别 NodeLoc 裸域和 www，不误识别相似域名', () {
     expect(
       normalizeDirectSearchLink('nodeloc.com/t/topic/123/4'),
       'https://nodeloc.com/t/topic/123/4',
@@ -30,6 +30,14 @@ void main() {
       'https://www.nodeloc.com/u/alice',
     );
     expect(normalizeDirectSearchLink('/t/123'), '/t/123');
+    expect(
+      normalizeDirectSearchLink('NODELOC.com:443/t/123'),
+      'https://NODELOC.com:443/t/123',
+    );
+    expect(
+      normalizeDirectSearchLink('nodeloc.com.example.org/t/123'),
+      'nodeloc.com.example.org/t/123',
+    );
     expect(normalizeDirectSearchLink('普通关键词'), '普通关键词');
   });
 

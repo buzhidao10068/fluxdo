@@ -1,10 +1,10 @@
-/// 音视频改名上传公共链路(社区「媒体上传」脚本思路的 App 端实现):
-/// 选文件 → 站点附件大小前置检查 → `.xz` 改名上传(绕站点扩展名白名单)→
-/// 生成 `<audio>/<video>` HTML 标签文本插 raw(cook 原样保留)。
+/// 音视频上传公共链路：先检查站点附件大小，优先使用原始扩展名上传，
+/// 仅在站点只允许 `.xz` 而不允许原扩展名时保留历史改名兼容路径。
+/// 上传后生成 `<audio>/<video>` HTML 标签文本插入 raw。
 ///
 /// 播放兼容:标签 `type` 写原文件真实 MIME(网页端浏览器/本 app
-/// AVFoundation 按它选解码器);`src` 用 `/uploads/short-url/<b62>.xz`
-/// 相对路径(Rails 动态路由 302 到真实存储,CDN 域名下会 404)。
+/// AVFoundation 按它选解码器);`src` 使用保留服务端扩展名的站内短链路径，
+/// 由 Rails 动态路由跳转到真实存储，避免 CDN 域名下的 404。
 library;
 
 import 'dart:async';
@@ -17,7 +17,9 @@ import '../../services/uploads/upload_progress.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:mime/mime.dart' show lookupMimeType;
-import 'package:path_provider/path_provider.dart';
+
+import '../../utils/app_directories.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
 
 import '../../services/app_error_handler.dart';
@@ -32,7 +34,6 @@ import '../../l10n/s.dart';
 /// `authorized_extensions`(staff 追加 `authorized_extensions_for_staff`)
 /// 动态派生,与网页端 `lib/uploads.js` 的 authorizedExtensions 同口径:
 /// 小写、剥空白与点、按 `|` 拆、滤掉带 `*` 的通配项。
-/// 音视频不走这里 —— 那条走 `.xz` 改名绕白名单,见文件头注释。
 ///
 /// 返回 null = 不设限(任一名单含 `*`,官方 authorizesAllExtensions
 /// 同款判定;或 siteSettings 未加载 —— 此时让服务端裁决,好过拿一份
@@ -55,7 +56,7 @@ List<String>? attachmentAllowedExtensions() {
     ..._extensionsToList(base),
     if (staffExtra != null) ..._extensionsToList(staffExtra),
   }.toList();
-  return exts.isEmpty ? null : exts;
+  return exts;
 }
 
 List<String> _extensionsToList(String raw) => raw
@@ -65,17 +66,24 @@ List<String> _extensionsToList(String raw) => raw
     .where((ext) => ext.isNotEmpty && !ext.contains('*'))
     .toList();
 
-/// `upload://<base62>.<ext>` → `/uploads/short-url/<base62>.xz` 播放路径。
-String mediaShortUrlToXzPath(String shortUrl) {
+/// 保留服务端返回的扩展名，兼容普通媒体和历史 `.xz` 短链。
+String mediaShortUrlToPath(String shortUrl) {
   if (shortUrl.startsWith('upload://')) {
     final token = shortUrl.substring('upload://'.length);
-    final dot = token.lastIndexOf('.');
-    final stem = dot > 0 ? token.substring(0, dot) : token;
-    return '/uploads/short-url/$stem.xz';
+    return '/uploads/short-url/$token';
   }
-  // 兜底:服务端未返回短链(直返 url)时仅换扩展
-  final dot = shortUrl.lastIndexOf('.');
-  return dot > 0 ? '${shortUrl.substring(0, dot)}.xz' : shortUrl;
+  return shortUrl;
+}
+
+/// 未加载设置、通配符、原扩展名已获准时均原名上传。
+/// NodeLoc 不允许 `.xz`，因此不再为未授权扩展名强制改名。
+bool shouldUploadMediaAsXz(String filename) {
+  final allowed = attachmentAllowedExtensions();
+  if (allowed == null || !allowed.contains('xz')) return false;
+  final name = filename.split(RegExp(r'[/\\]')).last;
+  final dot = name.lastIndexOf('.');
+  final ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
+  return !allowed.contains(ext);
 }
 
 /// 生成插入 raw 的媒体 HTML 标签。[voice] = 语音消息(包 `[wrap=voice]`
@@ -112,8 +120,10 @@ class PreparedMediaUpload {
   Future<UploadResult> execute(
     CancelToken cancelToken,
     UploadProgressCallback onProgress,
-  ) => DiscourseService().uploadMediaAsXz(
+  ) => _uploadMedia(
     path,
+    name: name,
+    isAudio: isAudio,
     cancelToken: cancelToken,
     onProgress: onProgress,
   );
@@ -121,8 +131,34 @@ class PreparedMediaUpload {
   String markdown(UploadResult result) => buildMediaTag(
     isAudio: isAudio,
     voice: voice,
-    srcPath: mediaShortUrlToXzPath(result.shortUrl),
-    mime: lookupMimeType(path) ?? (isAudio ? 'audio/mpeg' : 'video/mp4'),
+    srcPath: mediaShortUrlToPath(result.shortUrl),
+    mime: lookupMimeType(name) ?? (isAudio ? 'audio/mpeg' : 'video/mp4'),
+  );
+}
+
+Future<UploadResult> _uploadMedia(
+  String path, {
+  required String name,
+  required bool isAudio,
+  CancelToken? cancelToken,
+  UploadProgressCallback? onProgress,
+}) async {
+  // 必须先读取设置，不能在冷启动时因同步缓存尚未加载而误判上传策略。
+  await waitForUpload(PreloadedDataService().getSiteSettings(), cancelToken);
+  if (shouldUploadMediaAsXz(name)) {
+    return DiscourseService().uploadMediaAsXz(
+      path,
+      cancelToken: cancelToken,
+      onProgress: onProgress,
+    );
+  }
+  final mime = lookupMimeType(name) ?? (isAudio ? 'audio/mpeg' : 'video/mp4');
+  return DiscourseService().uploadMedia(
+    path,
+    filename: name,
+    contentType: DioMediaType.parse(mime),
+    cancelToken: cancelToken,
+    onProgress: onProgress,
   );
 }
 
@@ -137,6 +173,7 @@ Future<PreparedMediaUpload?> prepareMediaUpload(
   final maxBytes = await MediaUploadLimits.load();
   if (!context.mounted) return null;
   var preparedPath = path;
+  var preparedName = name;
   if (maxBytes != null && size >= maxBytes) {
     final compressed = await compressMediaWithDialog(
       context,
@@ -147,17 +184,18 @@ Future<PreparedMediaUpload?> prepareMediaUpload(
     );
     if (compressed == null || !context.mounted) return null;
     preparedPath = compressed;
+    preparedName = compressed.split(RegExp(r'[/\\]')).last;
   }
   return PreparedMediaUpload(
     path: preparedPath,
-    name: name,
+    name: preparedName,
     isAudio: isAudio,
     voice: voice,
   );
 }
 
 /// 已有本地媒体文件 → 上传 → 标签文本。失败弹 SnackBar 并返回 null
-/// (站点大小超限的提示文案来自 [uploadMediaAsXz] 的异常信息)。
+/// (站点大小超限时先提示压缩，服务端仍执行最终校验)。
 Future<String?> uploadMediaFileAsTag(
   BuildContext context, {
   required String path,
@@ -187,10 +225,14 @@ Future<String?> uploadMediaFileAsTag(
     }
     final mime =
         lookupMimeType(uploadName) ?? (isAudio ? 'audio/mpeg' : 'video/mp4');
-    final result = await DiscourseService().uploadMediaAsXz(uploadPath);
+    final result = await _uploadMedia(
+      uploadPath,
+      name: uploadName,
+      isAudio: isAudio,
+    );
     return buildMediaTag(
       isAudio: isAudio,
-      srcPath: mediaShortUrlToXzPath(result.shortUrl),
+      srcPath: mediaShortUrlToPath(result.shortUrl),
       mime: mime,
       voice: voice,
     );
@@ -290,7 +332,7 @@ Future<String?> compressMediaWithDialog(
     if (selected == null || !context.mounted) return null;
     mode = selected;
   }
-  final tempDir = await getTemporaryDirectory();
+  final tempDir = await getAppTemporaryDirectory();
   if (!context.mounted) return null;
 
   final cancellation = MediaCompressionCancellation();

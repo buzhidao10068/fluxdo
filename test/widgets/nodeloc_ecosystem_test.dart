@@ -285,7 +285,7 @@ void main() {
       expect(container.read(activeCategorySlugsProvider), isEmpty);
       expect(find.byType(ProfileStatsCard), findsNothing);
       expect(find.text(S.current.profile_loggingOut), findsNothing);
-      expect(find.text(S.current.profile_loginLinuxDo), findsOneWidget);
+      expect(find.text(S.current.profile_loginSite), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

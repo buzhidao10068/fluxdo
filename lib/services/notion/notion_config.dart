@@ -80,7 +80,7 @@ class NotionConfig {
 
 /// 配置仓库：按账号 username 隔离 key 存到 SharedPreferences。
 ///
-/// Token 是明文存储 —— 该项目其它敏感数据（cookie/CDK token）也是同样策略。
+/// Token 是明文存储；后续迁移应使用统一的 SecretStore。
 /// 如果以后要加密，可以替换为 flutter_secure_storage。
 class NotionConfigRepository {
   NotionConfigRepository(this._prefs);

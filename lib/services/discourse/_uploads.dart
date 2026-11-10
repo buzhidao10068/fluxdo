@@ -423,14 +423,14 @@ mixin _UploadsMixin on _DiscourseServiceBase {
     UploadProgressCallback? onProgress,
   }) => uploadFile(filePath, cancelToken: cancelToken, onProgress: onProgress);
 
-  /// 媒体上传的站点体积上限(linux.do 4MB;超限服务端 413)。
-
-  /// 音视频改名上传(与社区「媒体上传」脚本同 hack):站点扩展名白名单
-  /// 不含音视频,把文件名换 `.xz`(application/x-xz)绕过 —— 播放端
-  /// (本 app MediaCompatService 嗅探 / 网页原生 audio·video 标签)不受
-  /// 扩展名影响。站点附件上限前置检查,超限直接抛(不做压缩,调用方提示)。
-  Future<UploadResult> uploadMediaAsXz(
+  /// 音视频按服务端 `max_attachment_size_kb` 校验体积。
+  /// NodeLoc 当前为 15360 KiB，继续动态读取，避免站点调整后客户端限额过期。
+  /// 原名上传为默认行为；旧站仍允许 `.xz` 时可显式启用改名兼容。
+  Future<UploadResult> uploadMedia(
     String filePath, {
+    String? filename,
+    DioMediaType? contentType,
+    bool renameAsXz = false,
     CancelToken? cancelToken,
     UploadProgressCallback? onProgress,
   }) async {
@@ -445,18 +445,31 @@ mixin _UploadsMixin on _DiscourseServiceBase {
         '请先压缩后再上传',
       );
     }
-    final base = filePath.split('/').last;
+    final base = filename ?? filePath.split(RegExp(r'[/\\]')).last;
     final dot = base.lastIndexOf('.');
     final stem = dot > 0 ? base.substring(0, dot) : base;
-    final xzName = '$stem.xz';
     return uploadFile(
       filePath,
-      filenameOverride: xzName,
-      contentTypeOverride: DioMediaType('application', 'x-xz'),
+      filenameOverride: renameAsXz ? '$stem.xz' : base,
+      contentTypeOverride: renameAsXz
+          ? DioMediaType('application', 'x-xz')
+          : contentType,
       cancelToken: cancelToken,
       onProgress: onProgress,
     );
   }
+
+  /// 历史站点改名上传入口，保留旧媒体与站点兼容能力。
+  Future<UploadResult> uploadMediaAsXz(
+    String filePath, {
+    CancelToken? cancelToken,
+    UploadProgressCallback? onProgress,
+  }) => uploadMedia(
+    filePath,
+    renameAsXz: true,
+    cancelToken: cancelToken,
+    onProgress: onProgress,
+  );
 
   /// 批量解析 short_url。
   ///

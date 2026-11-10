@@ -4,10 +4,10 @@ project(runner LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "fluxdo")
+set(BINARY_NAME "fluxdo-nodeloc")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.github.lingyan000.fluxdo")
+set(APPLICATION_ID "com.buzhidao10068.fluxdo")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -154,8 +154,11 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
 endif()
 
 # Install .desktop file for URL scheme handling
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/fluxdo.desktop"
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/${APPLICATION_ID}.desktop"
   DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications"
+  COMPONENT Runtime)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../flatpak/icons/${APPLICATION_ID}.png"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/512x512/apps"
   COMPONENT Runtime)
 
 # === 媒体压缩:随包分发 ffmpeg(构建期下载,开发机缓存一次)===

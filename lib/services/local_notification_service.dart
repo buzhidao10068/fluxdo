@@ -34,10 +34,11 @@ class LocalNotificationService {
       requestSoundPermission: true,
     );
     const linuxSettings = LinuxInitializationSettings(defaultActionName: 'Open');
+    // Windows 通知注册和 COM 回调必须与原版隔离，GUID 在 fork 升级间保持稳定。
     const windowsSettings = WindowsInitializationSettings(
-      appName: 'FluxDO',
-      appUserModelId: 'Com.FluxDO.FluxDO',
-      guid: 'e965ef8c-b676-47c1-b6e7-297d63942974',
+      appName: 'FluxDO NodeLoc',
+      appUserModelId: 'com.buzhidao10068.fluxdo',
+      guid: '6e6bd52e-3237-4e62-90d6-39e06a9a58b7',
     );
 
     const settings = InitializationSettings(

@@ -14,7 +14,9 @@ import '../../../services/network/vpn_auto_toggle_service.dart';
 import '../../../services/network/webview/webview_adapter_settings_service.dart';
 import '../../../services/toast_service.dart';
 import '../../../services/windows_webview_environment_service.dart';
+
 import 'package:m3e_ui/m3e_ui.dart';
+
 import '../doh_detail_settings_page.dart';
 import 'ios_cert_install_dialog.dart';
 
@@ -478,10 +480,8 @@ class _CertGuideState extends State<_CertGuide> {
   }
 
   Future<void> _showIosDialog() async {
-    final result = await showIosCertInstallDialog(context);
-    if (result == true && mounted) {
-      setState(() => _installed = true);
-    }
+    await showIosCertInstallDialog(context);
+    if (mounted) await _loadState();
   }
 
   Future<void> _togglePerDevice(bool value) async {

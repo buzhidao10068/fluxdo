@@ -324,7 +324,7 @@ class _AboutPageState extends State<AboutPage> {
                   title: context.l10n.about_sourceCode,
                   subtitle: 'GitHub',
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/Lingyan000/fluxdo'),
+                    Uri.parse('https://github.com/buzhidao10068/fluxdo'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -354,7 +354,7 @@ class _AboutPageState extends State<AboutPage> {
                   icon: Symbols.bug_report_rounded,
                   title: context.l10n.about_feedback,
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/Lingyan000/fluxdo/issues'),
+                    Uri.parse('https://github.com/buzhidao10068/fluxdo/issues'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),

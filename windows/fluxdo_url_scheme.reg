@@ -1,7 +1,18 @@
 Windows Registry Editor Version 5.00
 
 ; FluxDO URL Scheme Registration
-; 双击此文件或在安装程序中导入以注册 fluxdo:// URL scheme
+; 双击此文件或在安装程序中导入以注册 fluxdo:// 与 discourse:// URL scheme
+;
+; 两个 scheme 都要注册：
+; - fluxdo://     应用自有深链（话题 / 用户 / 设置等）
+; - discourse://  Discourse User API Key 授权回调
+;                 (allowed_user_api_auth_redirects 默认白名单，无需站方加白)
+;                 缺了它，Windows 上 User API Key 授权登录会断在最后一步。
+;
+; 注意：安装包 (windows/setup.iss) 的 [Registry] 段已自动写入同样的键，
+; 本文件供便携版 / 绿色版 / 手动注册场景使用，两者保持同步。
+; 导入前将下方两个示例路径改为实际安装位置；免管理员安装通常在
+; %LOCALAPPDATA%\Programs\FluxDO NodeLoc，便携版使用解压位置。
 
 [HKEY_CURRENT_USER\Software\Classes\fluxdo]
 @="URL:FluxDO Protocol"
@@ -12,4 +23,15 @@ Windows Registry Editor Version 5.00
 [HKEY_CURRENT_USER\Software\Classes\fluxdo\shell\open]
 
 [HKEY_CURRENT_USER\Software\Classes\fluxdo\shell\open\command]
-@="\"C:\\Program Files\\FluxDO\\fluxdo.exe\" \"%1\""
+@="\"C:\\Program Files\\FluxDO NodeLoc\\fluxdo-nodeloc.exe\" \"%1\""
+
+[HKEY_CURRENT_USER\Software\Classes\discourse]
+@="URL:Discourse Protocol"
+"URL Protocol"=""
+
+[HKEY_CURRENT_USER\Software\Classes\discourse\shell]
+
+[HKEY_CURRENT_USER\Software\Classes\discourse\shell\open]
+
+[HKEY_CURRENT_USER\Software\Classes\discourse\shell\open\command]
+@="\"C:\\Program Files\\FluxDO NodeLoc\\fluxdo-nodeloc.exe\" \"%1\""

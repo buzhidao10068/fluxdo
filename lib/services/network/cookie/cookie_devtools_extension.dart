@@ -5,11 +5,11 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 
 import 'cookie_full_info.dart';
-import '../../../constants.dart';
 import 'cookie_jar_service.dart';
 import 'raw_cookie_writer.dart';
 import 'session_cookie_sentinel.dart';
 import 'webview_cookie_priming.dart';
+import '../../../constants.dart';
 
 /// Cookie 引擎的 DevTools service extension 桥。
 ///
@@ -42,10 +42,7 @@ class CookieDevtoolsExtension {
 
     developer.registerExtension('$_prefix.dump', _handleDump);
     developer.registerExtension('$_prefix.sweep', _handleSweep);
-    developer.registerExtension(
-      '$_prefix.nuclearReset',
-      _handleNuclearReset,
-    );
+    developer.registerExtension('$_prefix.nuclearReset', _handleNuclearReset);
     developer.registerExtension(
       '$_prefix.invalidatePriming',
       _handleInvalidatePriming,
@@ -54,7 +51,9 @@ class CookieDevtoolsExtension {
     developer.registerExtension('$_prefix.criticalNames', _handleCriticalNames);
 
     // 桥接 SweepEvent 到 developer.postEvent (DevTool 可订阅)
-    _sweepEventSub = SessionCookieSentinel.instance.events.listen(_postSweepEvent);
+    _sweepEventSub = SessionCookieSentinel.instance.events.listen(
+      _postSweepEvent,
+    );
 
     debugPrint('[CookieDevtoolsExtension] 已注册 6 个 service extensions');
   }
@@ -215,8 +214,9 @@ class CookieDevtoolsExtension {
             'secure': c.secure,
             'httpOnly': c.httpOnly,
             'expiresAt': c.expiresAt?.toIso8601String(),
-            'isCritical':
-                SessionCookieSentinel.criticalCookieNames.contains(c.name),
+            'isCritical': SessionCookieSentinel.criticalCookieNames.contains(
+              c.name,
+            ),
           },
         )
         .toList(growable: false);
@@ -237,32 +237,26 @@ class CookieDevtoolsExtension {
     return {
       'url': url,
       'timestamp': DateTime.now().toIso8601String(),
-      'jar': {
-        'initialized': jar.isInitialized,
-        'cookies': jarSnapshot,
-      },
+      'jar': {'initialized': jar.isInitialized, 'cookies': jarSnapshot},
       'webview': {
         'cookies': wvSnapshot,
         'criticalVariantsCount': criticalVariantsCount,
       },
-      'priming': {
-        'isPrimed': WebViewCookiePriming.instance.isPrimed,
-      },
+      'priming': {'isPrimed': WebViewCookiePriming.instance.isPrimed},
     };
   }
 
   Map<String, dynamic> _cookieInfoToMap(CookieFullInfo c) => {
-        'name': c.name,
-        'valueLength': c.value.length,
-        'domain': c.domain,
-        'path': c.path,
-        'hostOnly': c.isHostOnly,
-        'secure': c.isSecure,
-        'httpOnly': c.isHttpOnly,
-        'expiresMillis': c.expiresMillis,
-        'isCritical':
-            SessionCookieSentinel.criticalCookieNames.contains(c.name),
-      };
+    'name': c.name,
+    'valueLength': c.value.length,
+    'domain': c.domain,
+    'path': c.path,
+    'hostOnly': c.isHostOnly,
+    'secure': c.isSecure,
+    'httpOnly': c.isHttpOnly,
+    'expiresMillis': c.expiresMillis,
+    'isCritical': SessionCookieSentinel.criticalCookieNames.contains(c.name),
+  };
 
   // ---------------------------------------------------------------------------
   // 事件桥接

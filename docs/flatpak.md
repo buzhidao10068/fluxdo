@@ -10,7 +10,7 @@
 CI 分成三部分：
 
 0. `flatpak-wpe-layer`
-   - 使用 `flatpak/com.github.lingyan000.fluxdo.wpe-layer.yml` 单独构建：
+   - 使用 `flatpak/com.buzhidao10068.fluxdo.wpe-layer.yml` 单独构建：
      - `unifdef`
      - `woff2`
      - `libwpe`
@@ -49,6 +49,12 @@ CI 分成三部分：
    - `flutter assemble` 会运行 Dart build hooks；`sqlite3` 包（经 `sqflite_common_ffi` 引入）的 hook 默认在构建期从 GitHub 下载预编译库，在离线沙箱内必然失败。根级 `pubspec.yaml` 通过 `hooks.user_defines.sqlite3` 把它切换为编译仓库内 vendored 的 `third_party/sqlite3/sqlite3.c`（amalgamation），保持全程离线，详见 `third_party/sqlite3/README.md`。
    - 最终把生成的 Linux bundle 安装到 `/app/fluxdo`，输出 `.flatpak`。
 
+## NodeLoc fork 的启动身份
+
+应用 ID、导出的桌面文件与图标使用 `com.buzhidao10068.fluxdo`，显示名称为 `FluxDO NodeLoc`。Linux bundle 内的二进制改为 `fluxdo-nodeloc`；manifest 的 `command: fluxdo` 及 Flatpak desktop 的 `Exec=fluxdo %u` 继续调用沙盒内 `/app/bin/fluxdo` wrapper，由它转调 `/app/fluxdo/fluxdo-nodeloc` 并传递原始参数。修改二进制名时，须同步 wrapper 和 `scripts/ci/flatpak/stage_bundle.sh`，不能只修改 desktop 的 Exec。
+
+普通 Linux 安装使用 `Exec=fluxdo-nodeloc %u`，应将完整 bundle 放在专属目录并接入独立 PATH 入口，详见 [发布配置](release.md)。Flatpak 的 `/app/fluxdo` 是每个应用自己的沙盒目录，无需为了宿主机共存而改名。
+
 ## 这样做解决了什么
 
 - 不再把 Arch 构建产物塞进 `org.gnome.Platform`，避免 `libinput`、`icu`、WPE 链条出现 ABI 漂移。
@@ -61,8 +67,8 @@ CI 分成三部分：
 
 - `.github/workflows/build.yaml`
 - `.github/workflows/flatpak-wpe-layer.yaml`
-- `flatpak/com.github.lingyan000.fluxdo.yml`
-- `flatpak/com.github.lingyan000.fluxdo.wpe-layer.yml`
+- `flatpak/com.buzhidao10068.fluxdo.yml`
+- `flatpak/com.buzhidao10068.fluxdo.wpe-layer.yml`
 - `flatpak/wpe-layer.version`
 - `linux/CMakeLists.txt`
 - `scripts/ci/flatpak/prepare_source_tree.sh`
@@ -106,8 +112,8 @@ bash scripts/ci/flatpak/prepare_source_tree.sh
 rm -rf flatpak/stage/source-tree
 mkdir -p flatpak/stage/source-tree
 tar -xzf .artifacts/flatpak/fluxdo-flatpak-source-tree.tar.gz -C flatpak/stage/source-tree
-flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo flatpak_app flatpak/com.github.lingyan000.fluxdo.yml
-flatpak build-bundle repo fluxdo-linux-x86_64.flatpak com.github.lingyan000.fluxdo stable
+flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo flatpak_app flatpak/com.buzhidao10068.fluxdo.yml
+flatpak build-bundle repo fluxdo-linux-x86_64.flatpak com.buzhidao10068.fluxdo stable
 ```
 
 如果只想验证 SDK 里有没有对应开发包，可以按 Flatpak 官方文档提供的方式执行：
@@ -136,6 +142,6 @@ bash scripts/ci/flatpak/run_local_package.sh
 如果要验证预编译依赖层已经被主 manifest 正确安装到 app build root，可以在 Flatpak 构建结束后检查：
 
 ```bash
-flatpak-builder --run flatpak_app flatpak/com.github.lingyan000.fluxdo.yml sh -lc \
+flatpak-builder --run flatpak_app flatpak/com.buzhidao10068.fluxdo.yml sh -lc \
   'pkg-config --modversion wpe-webkit-2.0 && pkg-config --modversion wpe-platform-2.0 && pkg-config --modversion wpe-platform-headless-2.0'
 ```

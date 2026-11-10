@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:win32_registry/win32_registry.dart';
 
 /// 把自定义协议写入 HKCU\Software\Classes(免管理员),让系统浏览器能把
-/// discourse:// / fluxdo:// 深链派发给 fluxdo.exe。
+/// discourse:// / fluxdo:// 深链派发给当前的 fluxdo-nodeloc.exe。
 ///
 /// 幂等:重复调用只是覆写同样的值;exe 路径变化(升级/移动)时也借此自动修正。
 /// 配套:windows/runner/main.cpp 里的 SendAppLinkToInstance 负责把深链启动的

@@ -57,7 +57,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import '../../../utils/app_directories.dart';
+
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:m3e_ui/m3e_ui.dart';
 
@@ -2443,7 +2445,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
   }
 
   /// 通用文件上传(插入菜单「上传文件」):不限类型,走通用
-  /// `uploadFile` 接口(不做 4MB 音视频前置检查/改名,站点扩展名白名单
+  /// `uploadFile` 接口（站点扩展名白名单
   /// 内的常见文档/压缩包直接原名上传),插入 Discourse 标准附件链接
   /// 语法 `[文件名|attachment](upload://...) (大小)`,cook 后渲染成
   /// 网页端同款的附件下载条。
@@ -2455,6 +2457,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
       // 白名单从站点配置动态派生(staff 名单叠加);null = 站点通配或
       // 配置未加载,不设限让服务端裁决。
       final allowed = attachmentAllowedExtensions();
+      if (allowed != null && allowed.isEmpty) {
+        ScaffoldMessenger.maybeOf(context)
+            ?.showSnackBar(const SnackBar(content: Text('当前站点未开放附件上传')));
+        return;
+      }
       final picked = await FilePicker.platform.pickFiles(
         type: allowed == null ? FileType.any : FileType.custom,
         allowedExtensions: allowed,
@@ -2831,7 +2838,11 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     });
   }
 
-  Future<void> _showTableStructureMenu(String tableId, bool row, Rect anchor) async {
+  Future<void> _showTableStructureMenu(
+    String tableId,
+    bool row,
+    Rect anchor,
+  ) async {
     final target = _tableContext.value;
     if (target == null || target.tableId != tableId) return;
     final releaseChrome = ComposerChromeScope.maybeOf(context)?.hold();
@@ -2998,7 +3009,7 @@ class RichComposerEditorState extends State<RichComposerEditor> {
     if (editor == null) return;
     final bookmark = InsertionBookmark(editor);
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final fileName = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final tempFile = File(p.join(tempDir.path, fileName));
       await tempFile.writeAsBytes(bytes);
@@ -3948,19 +3959,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                                       radius: 8,
                                                       child: child,
                                                     ),
-                                            caretViewportInsets:
-                                                EdgeInsets.only(
-                                                  // 创建/编辑页的顶栏覆盖在滚动区上方。
-                                                  top:
-                                                      ComposerChromeScope.topInsetOf(
-                                                        context,
-                                                      ),
-                                                  bottom:
-                                                      bottomInset +
-                                                      _toolsAnchor
-                                                          .contextExtent
-                                                          .value,
-                                                ),
+                                            caretViewportInsets: EdgeInsets.only(
+                                              // 创建/编辑页的顶栏覆盖在滚动区上方。
+                                              top:
+                                                  ComposerChromeScope.topInsetOf(
+                                                    context,
+                                                  ),
+                                              bottom:
+                                                  bottomInset +
+                                                  _toolsAnchor
+                                                      .contextExtent
+                                                      .value,
+                                            ),
                                             showTrailingParagraph: true,
                                             emptyParagraphHint:
                                                 isEmpty &&
@@ -4005,8 +4015,18 @@ class RichComposerEditorState extends State<RichComposerEditor> {
                                             // cook 替换
                                             onTableEdited: _onTableEdited,
                                             onTableCommit: _onTableEdited,
-                                            tableStructureControlsBuilder: _isDesktop ? null : (context, cell, open) => ComposerTableControls(cell: cell, onOpen: open),
-                                            onTableStructureMenuRequested: _isDesktop ? null : _showTableStructureMenu,
+                                            tableStructureControlsBuilder:
+                                                _isDesktop
+                                                ? null
+                                                : (context, cell, open) =>
+                                                      ComposerTableControls(
+                                                        cell: cell,
+                                                        onOpen: open,
+                                                      ),
+                                            onTableStructureMenuRequested:
+                                                _isDesktop
+                                                ? null
+                                                : _showTableStructureMenu,
                                             onTableContextChanged: _isDesktop
                                                 ? null
                                                 : _updateTableContext,
@@ -4514,19 +4534,27 @@ class _RichToolbarState extends State<_RichToolbar> {
             ? child!
             : Tooltip(
                 message: context.l10n.editor.table_format_unavailable,
-                child: ExcludeFocus(child: AbsorbPointer(
-                  child: Opacity(opacity: .45, child: Row(
-                    key: const ValueKey('table-format-tools'),
-                    children: [
-                      _buildEmojiButton(theme),
-                      Expanded(child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(children: _buildMiddleTools(theme)),
-                      )),
-                      if (widget.onToggleTools != null) _buildToolsButton(theme),
-                    ],
-                  )),
-                )),
+                child: ExcludeFocus(
+                  child: AbsorbPointer(
+                    child: Opacity(
+                      opacity: .45,
+                      child: Row(
+                        key: const ValueKey('table-format-tools'),
+                        children: [
+                          _buildEmojiButton(theme),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(children: _buildMiddleTools(theme)),
+                            ),
+                          ),
+                          if (widget.onToggleTools != null)
+                            _buildToolsButton(theme),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
         child: ValueListenableBuilder<ComposerObjectSelection?>(
           valueListenable: widget.objectSelection,

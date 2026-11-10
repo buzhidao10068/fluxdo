@@ -42,7 +42,7 @@ class AppIconState {
 class AppIconNotifier extends StateNotifier<AppIconState> {
   static const String _prefKey = 'pref_app_icon';
   static const _platformChannel =
-      MethodChannel('com.github.lingyan000.fluxdo/app_icon');
+      MethodChannel('com.buzhidao10068.fluxdo/app_icon');
   final SharedPreferences _prefs;
 
   AppIconNotifier(this._prefs) : super(const AppIconState()) {

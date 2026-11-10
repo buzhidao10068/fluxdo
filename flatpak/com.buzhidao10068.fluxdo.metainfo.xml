@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.buzhidao10068.fluxdo</id>
+  <name>FluxDO</name>
+  <summary>Unofficial NodeLoc client built with Flutter</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <launchable type="desktop-id">com.buzhidao10068.fluxdo.desktop</launchable>
+  <description>
+    <p>FluxDO is an unofficial Flutter-based NodeLoc desktop client packaged for Flatpak distribution.</p>
+  </description>
+  <url type="homepage">https://github.com/buzhidao10068/fluxdo</url>
+  <url type="bugtracker">https://github.com/buzhidao10068/fluxdo/issues</url>
+  <content_rating type="oars-1.1"/>
+  <developer id="com.buzhidao10068">
+    <name>buzhidao10068</name>
+  </developer>
+  <provides>
+    <binary>fluxdo</binary>
+  </provides>
+</component>

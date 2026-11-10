@@ -1,7 +1,8 @@
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../utils/app_directories.dart';
 
 import '../discourse_cache_manager.dart';
 
@@ -21,7 +22,7 @@ enum ImageCacheCategory {
 /// 缓存大小计算服务
 class CacheSizeService {
   /// 统计/删除口径:blob 缓存根目录 + legacy cache_manager 残留目录
-  /// (v9 迁移后为空,防被杀断残留)。都在 `getTemporaryDirectory()` 下。
+  /// (v9 迁移后为空,防被杀断残留)。都在 `getAppTemporaryDirectory()` 下。
   static const _cacheKeys = [
     BlobImageCache.dirName,
     ...kLegacyImageCacheKeys,
@@ -29,11 +30,11 @@ class CacheSizeService {
 
   /// 计算图片缓存大小（遍历三个 CacheManager 的磁盘目录）
   ///
-  /// flutter_cache_manager 将缓存存储在 `getTemporaryDirectory()/{key}` 下。
+  /// flutter_cache_manager 将缓存存储在 `getAppTemporaryDirectory()/{key}` 下。
   /// 迁移产生的 `*.trash` 待删目录也计入 —— 后台清扫前的窗口期里它们
   /// 仍占磁盘,不算进来会出现"明明占几百 MB 却显示无缓存"。
   static Future<int> getImageCacheSize() async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await getAppTemporaryDirectory();
     int totalSize = 0;
     for (final key in _cacheKeys) {
       totalSize += await _getDirectorySize(Directory('${tempDir.path}/$key'));
@@ -46,7 +47,7 @@ class CacheSizeService {
 
   /// 按分类统计图片缓存大小(六类并行)。
   static Future<Map<ImageCacheCategory, int>> getImageCacheBreakdown() async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await getAppTemporaryDirectory();
     final t = tempDir.path;
     const blob = BlobImageCache.dirName;
 
@@ -97,7 +98,7 @@ class CacheSizeService {
   static Future<void> clearImageCacheCategory(
     ImageCacheCategory category,
   ) async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await getAppTemporaryDirectory();
 
     Future<void> deleteDir(String key) async {
       final dir = Directory('${tempDir.path}/$key');
@@ -149,7 +150,7 @@ class CacheSizeService {
 
   /// 计算 Cookie 缓存大小（.cookies 目录）
   static Future<int> getCookieCacheSize() async {
-    final docDir = await getApplicationDocumentsDirectory();
+    final docDir = await getAppDataDirectory();
     return _getDirectorySize(Directory('${docDir.path}/.cookies'));
   }
 
@@ -172,7 +173,7 @@ class CacheSizeService {
   /// 迁移遗留的 `*.trash` 待删目录一并删(用户主动清缓存 = 立即释放,
   /// 不等后台清扫)。
   static Future<void> deleteImageCacheDirs() async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await getAppTemporaryDirectory();
     for (final key in _cacheKeys) {
       final dir = Directory('${tempDir.path}/$key');
       if (await dir.exists()) {

@@ -19,7 +19,7 @@ class RenderBackendService {
   const RenderBackendService._();
 
   static const MethodChannel _channel = MethodChannel(
-    'com.github.lingyan000.fluxdo/render_backend',
+    'com.buzhidao10068.fluxdo/render_backend',
   );
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;

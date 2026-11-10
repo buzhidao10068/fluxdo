@@ -16,7 +16,7 @@ class CrashContextReporter {
   CrashContextReporter._();
 
   static const MethodChannel _channel =
-      MethodChannel('com.github.lingyan000.fluxdo/crashlytics');
+      MethodChannel('com.buzhidao10068.fluxdo/crashlytics');
 
   /// 最近的导航轨迹(最新在末尾),给现场一点"怎么走到这儿"的上下文。
   static final List<String> _trail = [];

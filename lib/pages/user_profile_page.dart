@@ -59,15 +59,8 @@ import '../l10n/s.dart';
 import '../utils/dialog_utils.dart';
 import '../widgets/common/hero_image.dart';
 
-/// 用户个人页
-/// 头像的展示方式:方形账号是 cover 裁切 + 圆角,圆形账号走 circular。
-///
-/// 一处给出,同时约束源端与 openViewer 两侧参数(见 ViewerSourceStyle)——
-/// 此前两处不同步:源端 borderRadius 12 而 openViewer 传 heroSourceRadius 8。
-ViewerSourceStyle _avatarStyle({required bool isSquare, required double radius}) =>
-    isSquare
-        ? ViewerSourceStyle.cover(radius: radius)
-        : const ViewerSourceStyle.circular();
+/// 页面头像和查看器使用相同的圆形展示与飞行参数。
+const _avatarStyle = ViewerSourceStyle.circular();
 
 class UserProfilePage extends ConsumerStatefulWidget {
   final String username;
@@ -1308,9 +1301,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         // StretchingOverscrollIndicator，与 NestedScrollView/SliverAppBar
         // 组合存在 framework bug（flutter/flutter #100967、#116522、#100538），
         // 表现为上滑松手时 tab 区域回弹抖动（与 topics_page 同因同修）。
-        behavior: ScrollConfiguration.of(
-          context,
-        ).copyWith(scrollbars: false, overscroll: false),
+        behavior: ScrollConfiguration.of(context)
+            .copyWith(scrollbars: false, overscroll: false),
         child: ExtendedNestedScrollView(
           controller: _scrollController,
           pinnedHeaderSliverHeightBuilder: () => pinnedHeaderHeight,
@@ -1506,9 +1498,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                               Flexible(
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.opaque,
-                                  onTap: () => copyUsernameToClipboard(
-                                    _user!.username,
-                                  ),
+                                  onTap: () =>
+                                      copyUsernameToClipboard(_user!.username),
                                   child: Text(
                                     '@${_user!.username}',
                                     maxLines: 1,
@@ -1728,19 +1719,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     required double borderWidth,
   }) {
     final avatarUrl = _user?.getAvatarUrl(size: 144);
-    final isSquare = isSquareAvatarUrl(avatarUrl);
     return GestureDetector(
       onTap: () {
         if (_user?.getAvatarUrl() != null) {
           final fullUrl = _user!.getAvatarUrl(size: 360);
           // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
           final thumbUrl = _user!.getAvatarUrl(size: 144);
-          // 与源端同源:同一个 _avatarStyle(isSquare, radius: 12)。
-          // 此前这里写死 radius 8 而源端 borderRadius 12,两处不同步。
-          final args = _avatarStyle(
-            isSquare: isSquareAvatarUrl(thumbUrl),
-            radius: 12,
-          ).openViewerArgs;
+          final args = _avatarStyle.openViewerArgs;
           ImageViewerPage.open(
             context,
             fullUrl,
@@ -1754,8 +1739,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       },
       child: Container(
         decoration: BoxDecoration(
-          shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
-          borderRadius: isSquare ? BorderRadius.circular(12) : null,
+          shape: BoxShape.circle,
           border: Border.all(color: borderColor, width: borderWidth),
         ),
         child: AvatarWithFlair(
@@ -1770,7 +1754,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           // 都由它保证;style 同时约束 openViewer 侧参数
           avatar: HeroImage(
             heroTag: 'user_avatar_${_user?.username ?? ''}',
-            style: _avatarStyle(isSquare: isSquare, radius: 12),
+            style: _avatarStyle,
             flightImage: avatarUrl == null
                 ? null
                 : discourseImageProvider(avatarUrl),
@@ -1826,10 +1810,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => FollowListPage(
-                username: widget.username,
-                isFollowing: true,
-              ),
+              builder: (_) =>
+                  FollowListPage(username: widget.username, isFollowing: true),
             ),
           ),
         ),
@@ -1841,10 +1823,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => FollowListPage(
-                username: widget.username,
-                isFollowing: false,
-              ),
+              builder: (_) =>
+                  FollowListPage(username: widget.username, isFollowing: false),
             ),
           ),
         ),
@@ -1921,8 +1901,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
     // ESC 两段式:右栏开着让分发落 detail scope(关右栏),空了才
     // maybePop 关整页。
-    (_standaloneEsc ??= PaneHostEscBinding(ref: ref))
-        .sync(context, paneOpen: selected.hasSelection);
+    (_standaloneEsc ??= PaneHostEscBinding(
+      ref: ref,
+    )).sync(context, paneOpen: selected.hasSelection);
 
     final notifier = ref.read(_ownPaneProvider.notifier);
     return PaneProjectionBackScope(
@@ -2203,16 +2184,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             GestureDetector(
               onTap: () {
                 if (_user?.getAvatarUrl() != null) {
-                  final avatarUrl = _user!.getAvatarUrl(
-                    size: 360,
-                  );
+                  final avatarUrl = _user!.getAvatarUrl(size: 360);
                   // 与页面头像同参(144)的缩略图作飞行纹理,命中已解码缓存
                   final thumbUrl = _user!.getAvatarUrl(size: 144);
                   // 与源端同源(同竖版口径,见 _avatarStyle)
-                  final args = _avatarStyle(
-                    isSquare: isSquareAvatarUrl(thumbUrl),
-                    radius: 12,
-                  ).openViewerArgs;
+                  final args = _avatarStyle.openViewerArgs;
                   ImageViewerPage.open(
                     context,
                     avatarUrl,
@@ -2226,23 +2202,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
               },
               child: Builder(
                 builder: (context) {
-                  // linux.do 站点定制:个别账号头像方形化,外层白边框
-                  // 得跟 SmartAvatar 里的裁切形状对齐,不然会出现
-                  // "图是方的、外层白圈还是圆的"这种两层错位。
+                  // 外层边框、头像和查看器统一使用圆形。
                   final avatarUrl = _user?.getAvatarUrl(size: 144);
-                  final isSquare = isSquareAvatarUrl(avatarUrl);
                   return Container(
                     decoration: BoxDecoration(
-                      shape: isSquare
-                          ? BoxShape.rectangle
-                          : BoxShape.circle,
-                      borderRadius: isSquare
-                          ? BorderRadius.circular(8)
-                          : null,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 2,
-                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
                     ),
                     child: AvatarWithFlair(
                       flairSize: 30,
@@ -2255,7 +2220,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       // HeroImage 统一件(同竖版口径)
                       avatar: HeroImage(
                         heroTag: 'user_avatar_${_user?.username ?? ''}',
-                        style: _avatarStyle(isSquare: isSquare, radius: 12),
+                        style: _avatarStyle,
                         flightImage: avatarUrl == null
                             ? null
                             : discourseImageProvider(avatarUrl),
@@ -2306,9 +2271,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                         const SizedBox(width: 8),
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
-                          child: _buildStatusEmoji(
-                            _user!.status!,
-                          ),
+                          child: _buildStatusEmoji(_user!.status!),
                         ),
                       ],
                     ],
@@ -2317,22 +2280,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   // Row 2: Username
                   if (_user?.username != null)
                     Padding(
-                      padding: const EdgeInsets.only(
-                        top: 2,
-                        bottom: 6,
-                      ),
+                      padding: const EdgeInsets.only(top: 2, bottom: 6),
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         // 点击 @username 复制用户名
-                        onTap: () => copyUsernameToClipboard(
-                          _user!.username,
-                        ),
+                        onTap: () => copyUsernameToClipboard(_user!.username),
                         child: Text(
                           '@${_user?.username}',
                           style: TextStyle(
-                            color: Colors.white.withValues(
-                              alpha: 0.85,
-                            ),
+                            color: Colors.white.withValues(alpha: 0.85),
                             fontSize: 13,
                           ),
                         ),
@@ -2384,15 +2340,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   _buildRestrictionBanner(
                     icon: Symbols.block_rounded,
                     label: _user!.isSuspendedForever
-                        ? context
-                              .l10n
-                              .userProfile_suspendedBannerForever
-                        : context.l10n
-                              .userProfile_suspendedBannerUntil(
-                                TimeUtils.formatFullDate(
-                                  _user!.suspendedTill,
-                                ),
-                              ),
+                        ? context.l10n.userProfile_suspendedBannerForever
+                        : context.l10n.userProfile_suspendedBannerUntil(
+                            TimeUtils.formatFullDate(_user!.suspendedTill),
+                          ),
                     reason: _user!.suspendReason,
                     color: Colors.redAccent,
                   ),
@@ -2404,15 +2355,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   _buildRestrictionBanner(
                     icon: Symbols.mic_off_rounded,
                     label: _user!.isSilencedForever
-                        ? context
-                              .l10n
-                              .userProfile_silencedBannerForever
-                        : context.l10n
-                              .userProfile_silencedBannerUntil(
-                                TimeUtils.formatFullDate(
-                                  _user!.silencedTill,
-                                ),
-                              ),
+                        ? context.l10n.userProfile_silencedBannerForever
+                        : context.l10n.userProfile_silencedBannerUntil(
+                            TimeUtils.formatFullDate(_user!.silencedTill),
+                          ),
                     reason: _user!.silenceReason,
                     color: Colors.orangeAccent,
                   ),
@@ -2440,9 +2386,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             textStyle: TextStyle(
-                              color: Colors.white.withValues(
-                                alpha: 0.9,
-                              ),
+                              color: Colors.white.withValues(alpha: 0.9),
                               fontSize: 14,
                               height: 1.3,
                             ),
@@ -2452,9 +2396,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: Colors.white.withValues(
-                                alpha: 0.5,
-                              ),
+                              color: Colors.white.withValues(alpha: 0.5),
                               fontSize: 14,
                               height: 1.3,
                               fontStyle: FontStyle.italic,
@@ -2499,9 +2441,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           ),
                         ),
                         child: _buildStatSlot(
-                          NumberUtils.formatCount(
-                            _user!.totalFollowing!,
-                          ),
+                          NumberUtils.formatCount(_user!.totalFollowing!),
                           context.l10n.userProfile_following,
                           _user!.totalFollowing!,
                         ),
@@ -2518,9 +2458,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                           ),
                         ),
                         child: _buildStatSlot(
-                          NumberUtils.formatCount(
-                            _user!.totalFollowers!,
-                          ),
+                          NumberUtils.formatCount(_user!.totalFollowers!),
                           context.l10n.userProfile_followers,
                           _user!.totalFollowers!,
                         ),
@@ -2535,16 +2473,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 spacing: 16,
                 children: [
                   _buildStatSlot(
-                    NumberUtils.formatCount(
-                      _summary!.likesReceived,
-                    ),
+                    NumberUtils.formatCount(_summary!.likesReceived),
                     context.l10n.userProfile_statsLikes,
                     _summary!.likesReceived,
                   ),
                   _buildStatSlot(
-                    NumberUtils.formatCount(
-                      _summary!.daysVisited,
-                    ),
+                    NumberUtils.formatCount(_summary!.daysVisited),
                     context.l10n.userProfile_statsVisits,
                     _summary!.daysVisited,
                   ),
@@ -2568,10 +2502,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             (_user?.lastPostedAt != null || _user?.lastSeenAt != null)) ...[
           const SizedBox(height: 12),
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 4,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
@@ -2586,12 +2517,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 ),
                 const SizedBox(width: 4),
                 RelativeTimeText(
-                  dateTime:
-                      _user?.lastSeenAt ?? _user!.lastPostedAt!,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                  ),
+                  dateTime: _user?.lastSeenAt ?? _user!.lastPostedAt!,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
                 ),
               ],
             ),
@@ -3667,33 +3594,34 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         child: TopicCardPrewarmScope(
           topics: topics,
           child: ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: topics.length + 1,
-          itemBuilder: (context, index) {
-            if (index == topics.length) {
-              return PagedListFooter(
-                hasMore: hasMore,
-                isLoadingMore: _votesLoadMoreCoordinator.isRunning && isLoading,
-                isLoadMoreFailed: _votesLoadMoreFailed,
-                onRetry: _loadMoreVotes,
+            padding: const EdgeInsets.all(12),
+            itemCount: topics.length + 1,
+            itemBuilder: (context, index) {
+              if (index == topics.length) {
+                return PagedListFooter(
+                  hasMore: hasMore,
+                  isLoadingMore:
+                      _votesLoadMoreCoordinator.isRunning && isLoading,
+                  isLoadMoreFailed: _votesLoadMoreFailed,
+                  onRetry: _loadMoreVotes,
+                );
+              }
+              final topic = topics[index];
+              return buildTopicItem(
+                context: context,
+                topic: topic,
+                isSelected: false,
+                onTap: () => _openTopic(
+                  topicId: topic.id,
+                  initialTitle: topic.title,
+                  scrollToPostNumber:
+                      ref.read(preferencesProvider).defaultNestedView
+                      ? null
+                      : topic.lastReadPostNumber,
+                ),
+                enableLongPress: enableLongPress,
               );
-            }
-            final topic = topics[index];
-            return buildTopicItem(
-              context: context,
-              topic: topic,
-              isSelected: false,
-              onTap: () => _openTopic(
-                topicId: topic.id,
-                initialTitle: topic.title,
-                scrollToPostNumber:
-                    ref.read(preferencesProvider).defaultNestedView
-                        ? null
-                        : topic.lastReadPostNumber,
-              ),
-              enableLongPress: enableLongPress,
-            );
-          },
+            },
           ),
         ),
       ),

@@ -15,7 +15,9 @@ import '../../widgets/crypto/crypto_encrypt_sheet.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:super_clipboard/super_clipboard.dart';
-import 'package:path_provider/path_provider.dart';
+
+import '../../utils/app_directories.dart';
+
 import 'package:path/path.dart' as p;
 
 import 'package:dio/dio.dart';
@@ -270,7 +272,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
       final result = await readImageFromReader(reader);
       if (result != null) {
         final (bytes, ext) = result;
-        final tempDir = await getTemporaryDirectory();
+        final tempDir = await getAppTemporaryDirectory();
         final fileName = 'paste_${DateTime.now().millisecondsSinceEpoch}.$ext';
         final tempFile = File(p.join(tempDir.path, fileName));
         await tempFile.writeAsBytes(bytes);
@@ -300,7 +302,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     final anchor = _uploadAnchors.capture();
     _uploadingCount++;
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final tempFile = File(p.join(tempDir.path, fileName));
       await tempFile.writeAsBytes(bytes);
 
@@ -1058,7 +1060,7 @@ class MarkdownToolbarState extends State<MarkdownToolbar> {
     }
   }
 
-  /// 音/视频改名上传(.xz 绕扩展名白名单,4MB 上限)→ 插 HTML 标签。
+  /// 音视频按站点附件设置上传，再插入 HTML 标签。
   Future<bool> _prepareMediaTask({
     required String path,
     required String name,

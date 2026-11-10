@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
-    <color name="ic_launcher_dark_background">#1C1C1E</color>
-    <color name="ic_launcher_modern_background">#1C1C1E</color>
-    <color name="ic_launcher_modern_light_background">#F0F0F3</color>
+    <color name="ic_launcher_background">#142A38</color>
+    <color name="ic_launcher_dark_background">#142A38</color>
+    <color name="ic_launcher_modern_background">#142A38</color>
+    <color name="ic_launcher_modern_light_background">#F0FDFA</color>
 </resources>

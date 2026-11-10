@@ -9,4 +9,4 @@ export LD_LIBRARY_PATH="/app/fluxdo/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
 cd /app/fluxdo
-exec /app/fluxdo/fluxdo "$@"
+exec "/app/fluxdo/fluxdo-nodeloc" "$@"

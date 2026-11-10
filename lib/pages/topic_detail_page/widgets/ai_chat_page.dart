@@ -11,7 +11,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // ignore: depend_on_referenced_packages
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../../../l10n/s.dart';
 import '../../../models/topic.dart';
@@ -23,6 +22,8 @@ import '../../../widgets/ai/ai_model_select_sheet.dart';
 import '../../../widgets/ai/ai_quick_prompts_bar.dart';
 import '../../../widgets/share/ai_share_image_preview.dart';
 import 'package:common_ui/common_ui.dart';
+
+import '../../../utils/app_directories.dart';
 import 'ai_chat_input.dart';
 import 'ai_chat_message_item.dart';
 import 'ai_context_selector.dart';
@@ -504,7 +505,7 @@ class _AiChatPageState extends ConsumerState<AiChatPage> {
     if (b64 != null && b64.isNotEmpty) {
       final bytes = base64Decode(b64);
       final ext = _extFromMime(attachment.mimeType);
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getAppTemporaryDirectory();
       final fileName = 'ai_reply_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final tempFile = File('${tempDir.path}/$fileName');
       await tempFile.writeAsBytes(bytes);
