@@ -17,7 +17,7 @@ dart tool/flutterw.dart build apk --debug --target-platform android-arm64 --dart
 
 包装入口统一生成本地化、CA 资源和启用 ECH 的 Rust 库。APK 位于 build/app/outputs/flutter-apk/。CI 验证产物见 [Android Delivery](https://github.com/buzhidao10068/fluxdo/actions/workflows/build.yaml)，选取对应提交下载 artifacts。工作流不会自动创建 Release。
 
-正式签名与核验步骤见 [Android 构建与候选验收](docs/release.md)。HTTPS App Links 暂未启用，浏览器授权及两版共存回调仍需真机验收。NodeLoc 实机截图待补，见 [截图说明](screenshots/README.md)。
+正式签名与核验步骤见 [Android 构建与候选验收](docs/release.md)。HTTPS App Links 尚未完成站方关联与系统域名验证，不承诺自动打开；浏览器授权及两版共存回调仍需真机验收。NodeLoc 实机截图待补，见 [截图说明](screenshots/README.md)。
 
 ## 功能与技术
 

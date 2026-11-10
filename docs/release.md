@@ -48,7 +48,7 @@ python3 scripts/ci/android/verify_apk.py --apk build/app/outputs/flutter-apk/app
 
 Firebase 默认关闭。启用时提供本 fork 自有的 `android/app/google-services.json`，设置 `ORG_GRADLE_PROJECT_enableFirebase=true`，并重新验证相关功能。当前 CI 验证的是关闭 Firebase 的构建。
 
-HTTPS App Links 尚未启用，需要站方部署实际包名与证书对应的 `assetlinks.json` 后再验收。保留的 `fluxdo` / `discourse` scheme 需要验证两版共存时的回调归属。
+Manifest 已声明 HTTPS 链接及 `autoVerify`，但 HTTPS App Links 尚未完成站方关联与系统域名验证。需要站方部署实际包名与证书对应的 `assetlinks.json` 后再验收，当前不承诺自动打开。保留的 `fluxdo` / `discourse` scheme 需要验证两版共存时的回调归属。
 
 ## 设备验收与发布边界
 
