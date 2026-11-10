@@ -283,7 +283,10 @@ void main() {
       (entry) => entry['tag'] == 'LogExport',
     );
     expect(failure['stage'], 'writeExportFile');
-    expect(failure['sourcePath'], blocked.path);
+    expect(
+      p.normalize(failure['sourcePath'] as String),
+      p.normalize(blocked.path),
+    );
     expect(failure['osErrorCode'], isNotNull);
     expect(failure['stackTrace'], isNotEmpty);
     expect(nativeCalls, isEmpty);

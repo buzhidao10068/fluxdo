@@ -27,7 +27,7 @@ void main() {
 
     for (final entity in Directory('lib').listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final path = entity.path;
+      final path = entity.path.replaceAll('\\', '/');
       if (exempt.containsKey(path)) continue;
 
       final src = entity.readAsStringSync();
@@ -36,7 +36,8 @@ void main() {
       if (!src.contains('Hero(') && !src.contains('HeroImage(')) continue;
 
       // 与图片查看器相关?
-      final viewerRelated = src.contains('ImageViewerPage') ||
+      final viewerRelated =
+          src.contains('ImageViewerPage') ||
           src.contains('openViewer') ||
           src.contains('heroTag');
       if (!viewerRelated) continue;
@@ -46,8 +47,8 @@ void main() {
       //  * 用 HeroImage 统一件(**首选** —— 它连带保证源端隐藏/占位/裁切
       //    插值,而不只是飞行起点);
       //  * 裸 Hero 但显式挂了 viewerHeroRectTween(迁移完成前的过渡形态)。
-      final ok = src.contains('HeroImage(') ||
-          src.contains('viewerHeroRectTween');
+      final ok =
+          src.contains('HeroImage(') || src.contains('viewerHeroRectTween');
       if (!ok) offenders.add(path);
     }
 
@@ -55,7 +56,8 @@ void main() {
     expect(
       checked.length,
       greaterThanOrEqualTo(4),
-      reason: '只扫到 ${checked.length} 个源端,判据可能失效(文件被重命名?)'
+      reason:
+          '只扫到 ${checked.length} 个源端,判据可能失效(文件被重命名?)'
           '扫到的=$checked',
     );
 
@@ -103,7 +105,8 @@ void main() {
       final src = entity.readAsStringSync();
 
       // 只看「自己开查看器」且「以 cover 展示缩略图」的文件
-      final opensViewer = src.contains('ImageViewerPage.open(') ||
+      final opensViewer =
+          src.contains('ImageViewerPage.open(') ||
           src.contains('DiscourseImageUtils.openViewer(');
       if (!opensViewer) continue;
       if (!src.contains('fit: BoxFit.cover')) continue;
@@ -111,7 +114,8 @@ void main() {
       if (!src.contains('heroTag')) continue;
 
       checked.add(entity.path);
-      final ok = src.contains('heroSourceFit') || src.contains('heroSourceCircular');
+      final ok =
+          src.contains('heroSourceFit') || src.contains('heroSourceCircular');
       if (!ok || !src.contains('thumbnailUrl')) offenders.add(entity.path);
     }
 
@@ -157,7 +161,8 @@ void main() {
       expect(
         src.contains('Hero('),
         isFalse,
-        reason: '$path 又出现裸 Hero( —— 应改用 HeroImage,否则源端隐藏/'
+        reason:
+            '$path 又出现裸 Hero( —— 应改用 HeroImage,否则源端隐藏/'
             '飞行占位/裁切插值/圆角同步都要各自重写一遍',
       );
     }
@@ -184,7 +189,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '以下文件的 heroSource* 没走 style.openViewerArgs,'
+      reason:
+          '以下文件的 heroSource* 没走 style.openViewerArgs,'
           '会与源端脱同步:\n  ${offenders.join("\n  ")}',
     );
   });
