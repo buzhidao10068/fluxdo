@@ -29,8 +29,6 @@ void main() {
           home: Scaffold(
             body: ComposerExpandedTools(
               anchor: anchor,
-              animation: const AlwaysStoppedAnimation(1),
-              flyingIds: const {},
             ),
           ),
         ),

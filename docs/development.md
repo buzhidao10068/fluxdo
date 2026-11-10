@@ -1,5 +1,21 @@
 # 开发环境与日常命令
 
+## 本阶段 Android 交付
+
+当前只交付 Android 9 / API 28 及以上的 `arm64-v8a`。本文其余平台说明保留作历史参考，其他平台不参与本阶段交付。
+
+使用 Flutter 3.47.4 / Dart 3.13.3、JDK 21、SDK 36、NDK 28.2.13676358、Rust 1.99.1 和 cargo-ndk 4.1.2，从递归检出运行项目包装入口：
+
+```powershell
+& '.fvm/flutter_sdk/bin/dart.bat' tool/flutterw.dart build apk --debug --target-platform android-arm64 --dart-define=cronetHttpNoPlay=true
+```
+
+Windows 上需保证 Rust **默认宿主**与实际可用的链接工具链一致。部分插件的 CargoKit 使用 `rustup run stable cargo`，仅切换默认工具链不足以改变这里的宿主解析。使用 MinGW 的开发机应先确认 `rustup run stable rustc -vV` 的 host 为 `x86_64-pc-windows-gnu`；必要时执行 `rustup set default-host x86_64-pc-windows-gnu`。这是用户级设置，应按本机工具链选择；有完整 MSVC 工具链的开发机可继续使用 MSVC。不得通过手改 pub-cache 绕过插件构建。
+
+PowerShell 直接调用 Gradle 时，包含点号的参数要整体引用，例如 `'-Pandroid.overridePathCheck=true'`；也可设置 `ORG_GRADLE_PROJECT_android_overridePathCheck=true` 环境变量。
+
+构建退出码不能代替 APK 核验。Windows 上插件批处理可能吞掉 Rust 编译失败，生成缺少原生库的 APK。构建后运行 `scripts/ci/android/verify_apk.py`，核对原生库完整性、ABI、Rust/ECH 来源、CA、包名、版本和签名；完整示例见 [Android 交付记录](../DeepSeek%20Harness/docs/5.2复盘(5.1)：Android交付与实机验收.md)。候选 release 必须设置 `ORG_GRADLE_PROJECT_requireReleaseSigning=true` 并提供预期签名证书摘要；普通 release 构建可能回退到 debug 签名。
+
 ## 分层约定
 
 - `melos`：仅用于 workspace bootstrap
@@ -135,4 +151,4 @@ security find-identity -v -p codesigning   # 应列出 "FluxDO Code Signing"
 
 然后在 `apple/Local.xcconfig` 中启用（见 example 文件的「用法 1」）。切换后首次启动钥匙串还会弹最后一次（旧 ACL 只认 adhoc 旧构建），点「始终允许」后 rebuild 不再弹。
 
-CI 发版使用同一张证书：把 p12 的 base64 与密码配置为仓库 secrets `MACOS_CODESIGN_P12_BASE64` / `MACOS_CODESIGN_P12_PASSWORD`（见 `.github/workflows/build.yaml` 的 "Setup macOS code signing" 步骤）。secrets 缺失时（如 fork）自动回退 adhoc 签名，构建不会失败。自签证书不等于公证，用户下载 DMG 后仍需右键打开或 `xattr -cr` 解除隔离，与 adhoc 时代一致。
+历史 macOS CI 使用 `MACOS_CODESIGN_P12_BASE64` / `MACOS_CODESIGN_P12_PASSWORD`。当前 Android Delivery 已移除该平台任务，不再读取这些 secrets。自签证书不等于公证，历史 DMG 仍需右键打开或 `xattr -cr` 解除隔离。

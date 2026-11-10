@@ -61,7 +61,7 @@ def main():
     badging = run(str(aapt), "dump", "badging", str(args.apk.resolve()))
     signature = run(*signer, "verify", "--verbose", "--print-certs", str(args.apk.resolve()))
     package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging)
-    minimum = re.search(r"^sdkVersion:'(\d+)'", badging, re.M)
+    minimum = re.search(r"^(?:minSdkVersion|sdkVersion):'(\d+)'", badging, re.M)
     target = re.search(r"^targetSdkVersion:'(\d+)'", badging, re.M)
     require(package and minimum and target, "APK manifest 信息不完整")
     require(package[1] == "com.buzhidao10068.fluxdo", "APK 应用标识不符")
@@ -92,6 +92,11 @@ def main():
     with zipfile.ZipFile(args.apk) as apk:
         libraries = [p for p in apk.namelist() if p.startswith("lib/") and p.endswith(".so")]
         require(libraries and all(p.split("/")[1] == "arm64-v8a" for p in libraries), "APK 包含其他 ABI 或缺少原生库")
+        # Windows 上部分 CargoKit 批处理可能吞掉编译失败，不能只相信 Gradle 退出码。
+        required_libraries = {"libdoh_proxy.so", "librhttp.so", "libsuper_native_extensions.so",
+                              "libquickjs_c_bridge_plugin.so", "libflutter.so"}
+        missing = required_libraries - {Path(p).name for p in libraries}
+        require(not missing, f"APK 缺少必要原生库：{sorted(missing)}")
         for path in libraries:
             allocated_sections(apk.read(path))
         packed = apk.read("lib/arm64-v8a/libdoh_proxy.so")

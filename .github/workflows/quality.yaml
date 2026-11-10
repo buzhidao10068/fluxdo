@@ -55,6 +55,24 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      # flutter test 不启动桌面插件注册器，仍需加载共用编辑器使用的真实 JS 引擎。
+      - name: Expose host QuickJS for editor tests
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from urllib.parse import unquote, urlparse
+          config = Path('.dart_tool/package_config.json').resolve()
+          package = next(p for p in json.loads(config.read_text())['packages'] if p['name'] == 'flutter_js')
+          uri = urlparse(package['rootUri'])
+          root = Path(unquote(uri.path)) if uri.scheme == 'file' else config.parent / unquote(package['rootUri'])
+          library = (root / 'linux/shared').resolve()
+          if not (library / 'libquickjs_c_bridge_plugin.so').is_file():
+              raise SystemExit('flutter_js 缺少宿主 QuickJS 动态库')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f"LD_LIBRARY_PATH={library}:{os.environ.get('LD_LIBRARY_PATH', '')}\n")
+          PY
+
       # 这两组 Dart 产物被 .gitignore 排除；pub get 不会运行项目的 slang 生成器。
       # 必须在 analyze 前生成，避免本地已有产物掩盖干净检出的缺失。
       - name: Generate localizations
@@ -64,7 +82,6 @@ jobs:
       # 范围刻意限定为 lib/ + 各迁移步骤相关测试文件，原因：
       # - devtools_extension/ 与 packages/*/example/ 有 10 个历史 error
       #   （缺 integration_test / devtools_extensions 依赖），与主工程无关；
-      # - test/compat/flutter_347_test.dart 等 3 个历史 error 属上游基线。
       # info 级既有 lint 不阻塞；error / warning 均阻塞，避免清理遗漏被放行。
       # 站点身份类改动最常见的翻车方式是「把 raw string 写成普通字符串」
       # 「host 判定口径改了一半」，analyze 能挡住其中一部分，其余由门禁 2 兜住。

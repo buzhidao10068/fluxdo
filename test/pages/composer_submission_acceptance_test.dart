@@ -210,7 +210,12 @@ void main() {
           ),
         ),
       );
-      addTearDown(() => directory.delete(recursive: true));
+      addTearDown(() async {
+        // FileImage 的解码缓存在 Windows 上会持有文件，清理后再删除测试图片。
+        imageCache.clear();
+        imageCache.clearLiveImages();
+        await tester.runAsync(() => directory.delete(recursive: true));
+      });
       const picker = MethodChannel('plugins.flutter.io/image_picker');
       var picked = 0;
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(picker, (

@@ -85,6 +85,8 @@ Future<void> _pump(
   );
   SharedPreferences.setMockInitialValues({
     ChatBottomContainerPrefKey.keyboardHeight: ?cachedKeyboardHeight,
+    ChatBottomContainerPrefKey.keyboardHeightPortrait: ?cachedKeyboardHeight,
+    ChatBottomContainerPrefKey.keyboardHeightLandscape: ?cachedKeyboardHeight,
   });
   final prefs = await SharedPreferences.getInstance();
   await tester.runAsync(() async {
@@ -999,9 +1001,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(ImageUploadDialog), findsOneWidget);
-    Navigator.of(tester.element(find.byType(ImageUploadDialog))).pop(
-      ImageUploadResult(path: '/模拟/组内图片.png', originalName: '组内图片.png'),
-    );
+    Navigator.of(tester.element(find.byType(ImageUploadDialog)))
+        .pop(ImageUploadResult(path: '/模拟/组内图片.png', originalName: '组内图片.png'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     // 文件不存在让真实上传入口在本地失败，无需发送网络请求。
@@ -1980,8 +1981,8 @@ void main() {
   }
 
   for (final rich in [false, true]) {
-    for (final cached in [false, true]) {
-      testWidgets('平板微小键盘高度不压缩表情和附件面板 rich=$rich cached=$cached', (
+    for (final cachedHeight in <double?>[null, 24, 280]) {
+      testWidgets('平板微小键盘高度不压缩表情和附件面板 rich=$rich cached=$cachedHeight', (
         tester,
       ) async {
         tester.view.viewPadding = const FakeViewPadding(bottom: 24);
@@ -1996,24 +1997,18 @@ void main() {
               width: 640,
               height: 700,
               child: rich
-                  ? RichComposerEditor(
-                      controller: controller,
-                      focusNode: focus,
-                    )
-                  : MarkdownEditor(
-                      controller: controller,
-                      focusNode: focus,
-                    ),
+                  ? RichComposerEditor(controller: controller, focusNode: focus)
+                  : MarkdownEditor(controller: controller, focusNode: focus),
             ),
           ),
           width: 1200,
           height: 800,
-          cachedKeyboardHeight: cached ? 24 : null,
+          cachedKeyboardHeight: cachedHeight,
         );
         await tester.pump(const Duration(milliseconds: 300));
         focus.requestFocus();
         await tester.pump();
-        if (!cached) {
+        if (cachedHeight == null) {
           // 浮动/外接键盘可能仅回报底部栏高度，也会被插件缓存。
           ChatBottomContainerListenerManager().flutterApi.keyboardHeight(48);
           await tester.pump();
@@ -2040,9 +2035,9 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
         expect(panel, findsNothing);
         expect(
-          tester.getSize(
-            find.byKey(const ValueKey('composer-keyboard-space')),
-          ).height,
+          tester
+              .getSize(find.byKey(const ValueKey('composer-keyboard-space')))
+              .height,
           24,
         );
         await tester.tap(find.byTooltip(S.current.composer_expandToolbar));

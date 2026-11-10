@@ -7,9 +7,11 @@ Future<Map<String, dynamic>> parseWithNode(
   bool footnotes = false,
   Map<String, dynamic> siteSettings = const {},
 }) async {
-  final result = await Process.run('node', [
-    '-e',
-    '''
+  final result = await Process.run(
+    'node',
+    [
+      '-e',
+      '''
 const fs = require('fs');
 eval(fs.readFileSync('assets/cook/discourse-cook.js', 'utf8'));
 __fluxdoCook.init(JSON.stringify({
@@ -27,9 +29,12 @@ __fluxdoCook.init(JSON.stringify({
 }));
 process.stdout.write(__fluxdoCook.parseForEditor(JSON.parse(process.argv[1])));
 ''',
-    jsonEncode(raw),
-    jsonEncode(siteSettings),
-  ]);
+      jsonEncode(raw),
+      jsonEncode(siteSettings),
+    ],
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
   if (result.exitCode != 0) throw StateError('${result.stderr}');
   return jsonDecode(result.stdout as String) as Map<String, dynamic>;
 }
@@ -39,9 +44,11 @@ Future<String> cookWithNode(
   bool footnotes = false,
   Map<String, dynamic> siteSettings = const {},
 }) async {
-  final result = await Process.run('node', [
-    '-e',
-    '''
+  final result = await Process.run(
+    'node',
+    [
+      '-e',
+      '''
 const fs = require('fs');
 eval(fs.readFileSync('assets/cook/discourse-cook.js', 'utf8'));
 __fluxdoCook.init(JSON.stringify({
@@ -59,9 +66,12 @@ __fluxdoCook.init(JSON.stringify({
 }));
 process.stdout.write(__fluxdoCook.cook(JSON.parse(process.argv[1])));
 ''',
-    jsonEncode(raw),
-    jsonEncode(siteSettings),
-  ]);
+      jsonEncode(raw),
+      jsonEncode(siteSettings),
+    ],
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
   if (result.exitCode != 0) throw StateError('${result.stderr}');
   return result.stdout as String;
 }

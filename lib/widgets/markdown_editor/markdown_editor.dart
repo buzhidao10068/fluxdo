@@ -1239,7 +1239,15 @@ class MarkdownEditorState extends ConsumerState<MarkdownEditor> {
           switch (panelType) {
             case ChatBottomPanelType.keyboard:
               return ComposerKeyboardSpace(
-                heldHeight: _returningToKeyboard ? _panelHeight : null,
+                // 原生回报可能晚于切换事件；微小高度到达后立即释放过渡占位。
+                heldHeight:
+                    _returningToKeyboard &&
+                        (_panelController.keyboardHeight == 0 ||
+                            isComposerDockedKeyboardHeight(
+                              _panelController.keyboardHeight,
+                            ))
+                    ? _panelHeight
+                    : null,
                 onHandoffComplete: _finishKeyboardHandoff,
               );
             case ChatBottomPanelType.other:

@@ -30,7 +30,7 @@ void main() {
             child: Column(
               children: [
                 ComposerIsland(
-                  expanded: expanded,
+                  expansion: expanded ? 1 : 0,
                   child: TextField(focusNode: focus),
                 ),
                 const ComposerObjectSurface(
